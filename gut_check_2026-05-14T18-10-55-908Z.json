@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "topic": "Marine Biology",
+      "anchor_statement": "The average depth of the deep-sea benthos layer where bioluminescent organisms dominate is approximately:",
+      "the_real_number": 4000,
+      "unit": "meters"
+    },
+    {
+      "topic": "Quantum Physics",
+      "anchor_statement": "The coherence time of a superconducting qubit in a shielded cryogenic environment is typically measured in:",
+      "the_real_number": 100,
+      "unit": "microseconds"
+    },
+    {
+      "topic": "Renaissance History",
+      "anchor_statement": "The total number of years spanning the Italian Renaissance, from the decline of the Middle Ages to the sack of Rome, is estimated to be:",
+      "the_real_number": 250,
+      "unit": "years"
+    },
+    {
+      "topic": "Human Gut Microbiome",
+      "anchor_statement": "The estimated number of bacterial cells residing in the human gastrointestinal tract is approximately:",
+      "the_real_number": 38,
+      "unit": "trillion"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "topic": "Astroparticle Physics",
+  "theme_description": "The study of subatomic particles originating from space and their interactions with cosmic phenomena.",
+  "questions": [
+    {
+      "anchor_statement": "Estimate the average number of solar neutrinos that pass through a human thumbnail every single second.",
+      "the_real_number": 65000000000,
+      "unit": "neutrinos per square centimeter per second",
+      "context_clue": "Despite this massive flux, neutrinos interact so weakly with matter that nearly all of them pass through your body without ever striking a single atom."
+    },
+    {
+      "anchor_statement": "What is the estimated energy, in joules, of the 'Oh-My-God' particle, the most energetic cosmic ray ever detected?",
+      "the_real_number": 50,
+      "unit": "joules",
+      "context_clue": "This single subatomic particle carried as much kinetic energy as a baseball traveling at roughly 60 miles per hour."
+    },
+    {
+      "anchor_statement": "How many Earth-masses worth of dark matter are estimated to be present within the observable volume of our own galaxy, the Milky Way?",
+      "the_real_number": 1500000000000,
+      "unit": "solar masses",
+      "context_clue": "Dark matter is estimated to make up about 85 percent of the total mass of the galaxy, yet it remains completely invisible to all electromagnetic spectrum observation."
+    }
+  ]
+}

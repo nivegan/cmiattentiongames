@@ -1,0 +1,20 @@
+{
+  "industry_theme": "Linguistic Anthropology and Historical Linguistics",
+  "questions": [
+    {
+      "anchor_statement": "The estimated number of distinct language families currently recognized by linguists globally.",
+      "the_real_number": 142,
+      "unit": "language families"
+    },
+    {
+      "anchor_statement": "The approximate number of phonemes in the Rotokas language, which holds the record for one of the smallest phoneme inventories.",
+      "the_real_number": 11,
+      "unit": "phonemes"
+    },
+    {
+      "anchor_statement": "The number of estimated 'living' languages listed in the Ethnologue database as of 2024.",
+      "the_real_number": 7168,
+      "unit": "languages"
+    }
+  ]
+}

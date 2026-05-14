@@ -1,0 +1,24 @@
+{
+  "game_mode": "gut_check",
+  "topic": "Myrmecology (The study of ants)",
+  "content": [
+    {
+      "question": "How many times their own body weight can an average ant carry?",
+      "answer": 50,
+      "unit": "times",
+      "clue": "Consider the immense strength relative to their small size, often cited in elementary school science."
+    },
+    {
+      "question": "How many distinct species of ants have been identified globally?",
+      "answer": 14000,
+      "unit": "species",
+      "clue": "The estimate falls within the thousands range, representing a massive diversity of subfamilies."
+    },
+    {
+      "question": "What is the estimated total biomass of all ants on Earth combined, in megatonnes of dry carbon?",
+      "answer": 12,
+      "unit": "megatonnes",
+      "clue": "A major 2022 study estimated this figure, suggesting ants outweigh all wild birds and mammals combined."
+    }
+  ]
+}

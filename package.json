@@ -1,0 +1,20 @@
+{
+  "name": "kalari-project",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "generate_game.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.105.4",
+    "dotenv": "^16.6.1",
+    "yargs": "^18.0.0",
+    "zod": "^4.4.3"
+  }
+}

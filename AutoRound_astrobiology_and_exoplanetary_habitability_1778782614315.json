@@ -1,0 +1,24 @@
+{
+  "topic": "Astrobiology and Exoplanetary Habitability",
+  "theme_description": "The interdisciplinary study of the origins, evolution, and distribution of life in the universe through the lens of planetary physics and chemistry.",
+  "questions": [
+    {
+      "anchor_statement": "The number of confirmed exoplanets currently known to exist within the habitable 'Goldilocks' zone of their host stars according to the NASA Exoplanet Archive.",
+      "the_real_number": 68,
+      "unit": "planets",
+      "context_clue": "While thousands of exoplanets have been discovered, only a small fraction possess the precise orbital distance and atmospheric conditions to potentially support liquid water."
+    },
+    {
+      "anchor_statement": "The estimated approximate number of Earth-like planets orbiting Sun-like stars in the Milky Way galaxy, based on Kepler mission data extrapolations.",
+      "the_real_number": 6000000000,
+      "unit": "planets",
+      "context_clue": "This estimate accounts for the occurrence rate of rocky planets in the habitable zone of G-type stars, which is roughly 0.4 per star."
+    },
+    {
+      "anchor_statement": "The number of 'Great Oxidation Event' cycles Earth experienced before the final, permanent rise of atmospheric oxygen approximately 2.4 billion years ago.",
+      "the_real_number": 2,
+      "unit": "whiffs",
+      "context_clue": "Geochemical evidence suggests there were transient 'whiffs' of oxygen in the atmosphere long before the actual Great Oxidation Event permanently transformed Earth's biosphere."
+    }
+  ]
+}
