@@ -1,2 +1,3 @@
 # cmiattentiongames
-Resist the attention economy with daily games 
+
+Resist the attention economy with daily games

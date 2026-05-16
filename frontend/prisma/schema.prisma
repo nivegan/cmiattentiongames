@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model daily_funnel {
+  id           String    @id @db.Uuid
+  user_id      String    @db.Uuid
+  event_type   EventType
+  game_type_id GameType?
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model kalari_games {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mode          String
+  topic         String?
+  content       Json
+  scheduled_for DateTime  @db.Date
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@unique([mode, scheduled_for], map: "unique_daily_game")
+}
+
+model user_stats {
+  id               String    @id @db.Uuid
+  user_id          String    @db.Uuid
+  game_type_id     GameType?
+  difficulty_band  Float
+  score            Int
+  is_success       Boolean
+  reaction_time_ms Int?
+  metadata         Json?
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+}
+
+enum EventType {
+  LOGIN
+  GAME_CLICK
+  GAME_COMPLETE
+}
+
+enum GameType {
+  STEADY_GAZE
+  CLEAR_THE_AIR
+  EXTRACT_THE_FACTS
+  GUT_CHECK
+  READ_BETWEEN_DESIGNS
+  MENTAL_REFLEX
+}
