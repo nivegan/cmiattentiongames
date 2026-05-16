@@ -1,111 +1,130 @@
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
+import dotenv from 'dotenv';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const envPath = path.join(__dirname, '.env.local');
-
-// 1. ENV PARSER (With Trailing Slash Protection)
-if (fs.existsSync(envPath)) {
-    const envFile = fs.readFileSync(envPath, 'utf8');
-    envFile.split(/\r?\n/).forEach(line => {
-        const [key, ...valueParts] = line.split('=');
-        if (key && valueParts.length > 0) {
-            let v = valueParts.join('=').trim().replace(/^["']|["']$/g, '');
-            if (key.trim().toUpperCase() === 'SUPABASE_URL' && v.endsWith('/')) v = v.slice(0, -1);
-            process.env[key.trim().toUpperCase()] = v;
-        }
-    });
-}
+dotenv.config({ path: '.env.local' });
 
 const { SUPABASE_URL, SUPABASE_KEY, GOOGLE_GENERATIVE_AI_API_KEY } = process.env;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// 2. REVISED SCHEMAS (Gut Check = 3 Questions | Extract Facts = Bias Test)
+// 1. SCHEMAS WITH ROBUST PRE-PROCESSING
 const GutCheckSchema = z.object({
     industry_theme: z.string(),
     questions: z.array(z.object({
         anchor_statement: z.string(),
-        the_real_number: z.number(),
-        unit: z.string()
+        the_real_number: z.preprocess((val) => parseFloat(val), z.number()),
+        unit: z.string(),
+        difficulty_level: z.string()
     })).length(3)
 });
 
 const ExtractFactsSchema = z.object({
     topic: z.string(),
-    paragraph_a: z.string(), // Narrative 1
-    paragraph_b: z.string(), // Narrative 2
+    paragraph_a: z.string(),
+    paragraph_b: z.string(),
     mcq_questions: z.array(z.object({
         question: z.string(),
         options: z.array(z.string()).length(4),
-        correct_answer_index: z.number().min(0).max(3)
+        correct_answer_index: z.preprocess((val) => parseInt(val, 10), z.number().min(0).max(3))
     })).length(3)
 });
 
-// 3. MAIN LOGIC
 async function generate() {
     const argv = yargs(hideBin(process.argv)).argv;
-    const mode = argv.mode;
-
-    if (!mode || !['gut_check', 'extract_facts'].includes(mode)) {
-        console.log("Usage: node generate_game.js --mode=gut_check");
-        return;
-    }
-
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GOOGLE_GENERATIVE_AI_API_KEY}`;
-
-    const prompts = {
-        gut_check: `Generate 3 estimation questions for a niche academic topic. Return ONLY JSON: { "industry_theme": "string", "questions": [{"anchor_statement": "string", "the_real_number": number, "unit": "string"}] }`,
-        extract_facts: `Generate a 'Separating Bias' scenario. Provide two short paragraphs on the same niche topic with opposing biased narratives. Provide 3 MCQs that test the ability to identify neutral facts vs spin. Return ONLY JSON: { "topic": "string", "paragraph_a": "string", "paragraph_b": "string", "mcq_questions": [{"question": "string", "options": ["","","",""], "correct_answer_index": 0}] }`
-    };
+    const mode = argv.mode || 'extract_facts';
+    
+    // Chennai Local Date
+    const now = new Date();
+    const offset = now.getTimezoneOffset() * 60000;
+    const today = new Date(now - offset).toISOString().split('T')[0];
 
     try {
-        console.log(`--- Curating ${mode} Round ---`);
-        const response = await fetch(apiUrl, {
+        // 2. CHECK LOCK (Ignore malformed DB entries)
+        const { data: existing } = await supabase
+            .from('kalari_games')
+            .select('content')
+            .eq('mode', mode)
+            .eq('scheduled_for', today)
+            .maybeSingle();
+
+        // Validating structure before returning existing
+        if (existing && existing.content) {
+            const hasGut = mode === 'gut_check' && existing.content.questions;
+            const hasFacts = mode === 'extract_facts' && existing.content.mcq_questions;
+            
+            if (hasGut || hasFacts) {
+                const out = JSON.stringify(existing.content, null, 2);
+                fs.writeFileSync(`${mode}.json`, out);
+                process.stdout.write(out);
+                return;
+            }
+        }
+
+        // 3. HARD-CODED PROMPT TEMPLATES (Ensures no hallucinations)
+        let prompt = "";
+        if (mode === 'gut_check') {
+            prompt = `Return ONLY a raw JSON object for 'Gut Check'.
+            Date: ${today}. Level: Increasing difficulty.
+            {
+                "industry_theme": "Industrial",
+                "questions": [
+                    { "anchor_statement": "string", "the_real_number": 12.5, "unit": "unit", "difficulty_level": "Easy" },
+                    { "anchor_statement": "string", "the_real_number": 450, "unit": "unit", "difficulty_level": "Medium" },
+                    { "anchor_statement": "string", "the_real_number": 0.8, "unit": "unit", "difficulty_level": "Hard" }
+                ]
+            }`;
+        } else {
+            prompt = `Return ONLY a raw JSON object for 'Extract the Facts'.
+            Date: ${today}. Level: Complex logic.
+            {
+                "topic": "Future Technology",
+                "paragraph_a": "Detailed factual paragraph.",
+                "paragraph_b": "Detailed but slightly inaccurate paragraph.",
+                "mcq_questions": [
+                    { "question": "string", "options": ["A", "B", "C", "D"], "correct_answer_index": 1 }
+                ]
+            } (Provide exactly 3 questions in mcq_questions array)`;
+        }
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GOOGLE_GENERATIVE_AI_API_KEY}`;
+        
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                contents: [{ parts: [{ text: prompts[mode] }] }],
+                contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { responseMimeType: "application/json" }
             })
         });
 
         const data = await response.json();
-        if (data.error) throw new Error(data.error.message);
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawText) throw new Error("API returned empty candidates.");
 
-        const rawText = data.candidates[0].content.parts[0].text;
         const parsed = JSON.parse(rawText);
+        
+        // 4. VALIDATE AGAINST MODE-SPECIFIC SCHEMA
+        const validated = mode === 'gut_check' ? GutCheckSchema.parse(parsed) : ExtractFactsSchema.parse(parsed);
 
-        // Validation Firewall
-        const schema = mode === 'gut_check' ? GutCheckSchema : ExtractFactsSchema;
-        const validated = schema.parse(parsed);
+        // 5. UPSERT (Force overwrite of any "undefined" or broken entries for today)
+        await supabase.from('kalari_games').upsert({
+            mode,
+            topic: mode === 'gut_check' ? validated.industry_theme : validated.topic,
+            content: validated,
+            scheduled_for: today
+        }, { onConflict: 'mode,scheduled_for' });
 
-        // Upload to Supabase
-        const { error } = await supabase.from('kalari_games').insert([{
-            mode: mode,
-            topic: validated.topic || validated.industry_theme,
-            content: validated 
-        }]);
-
-        if (error) throw error;
-
-        // Output to local file
-        fs.writeFileSync(path.join(__dirname, 'output.json'), JSON.stringify(validated, null, 2));
-
-        // Print clean JSON for the demo
-        console.log(JSON.stringify(validated, null, 2));
-        console.log(`\n✅ Success! Round saved to output.json and Supabase.`);
+        const finalOutput = JSON.stringify(validated, null, 2);
+        fs.writeFileSync(`${mode}.json`, finalOutput);
+        process.stdout.write(finalOutput);
 
     } catch (err) {
+        console.error("🛑 SCRIPT ERROR:", err.message);
         if (err instanceof z.ZodError) {
-            console.error("🛑 Schema Validation Failed. AI sent incorrect structure:");
-            console.error(JSON.stringify(err.format(), null, 2));
-        } else {
-            console.error("🛑 Error:", err.message);
+            console.error("Validation Details:", JSON.stringify(err.errors, null, 2));
         }
     }
 }

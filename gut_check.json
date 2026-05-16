@@ -1,0 +1,23 @@
+{
+  "questions": [
+    {
+      "unit": "kg",
+      "the_real_number": 2250,
+      "anchor_statement": "The total weight of an empty standard 20-foot shipping container is approximately",
+      "difficulty_level": "Easy"
+    },
+    {
+      "unit": "meters",
+      "the_real_number": 450,
+      "anchor_statement": "The length of a standard industrial conveyor belt line in a medium-sized automated warehouse is",
+      "difficulty_level": "Medium"
+    },
+    {
+      "unit": "million",
+      "the_real_number": 4.8,
+      "anchor_statement": "The total number of industrial robots operational in factories worldwide as of 2026 is approximately",
+      "difficulty_level": "Hard"
+    }
+  ],
+  "industry_theme": "Industrial"
+}

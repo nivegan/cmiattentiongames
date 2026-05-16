@@ -1,0 +1,37 @@
+{
+  "topic": "Future Technology",
+  "paragraph_a": "By May 15, 2026, the integration of solid-state batteries in commercial electric vehicles is expected to reach a significant milestone, offering energy densities exceeding 500 Wh/kg. This shift, coupled with advancements in decentralized energy grid management using blockchain, will likely reduce charging times for long-range vehicles to under 10 minutes. Furthermore, the global rollout of 6G communication standards, currently in the initial specification phase, is anticipated to support ubiquitous hyper-connectivity for autonomous infrastructure, enabling real-time data processing speeds in the terabit-per-second range.",
+  "paragraph_b": "On May 15, 2026, the world will celebrate the full global implementation of 6G technology, which has already replaced all existing 5G infrastructure. Solid-state battery production has become so cost-effective that internal combustion engines are officially banned in every country globally. Additionally, standard home internet connections are now running at speeds of 100 terabits per second, and autonomous vehicles are legally required to operate without any manual override systems in all urban environments.",
+  "mcq_questions": [
+    {
+      "options": [
+        "200 Wh/kg",
+        "Over 500 Wh/kg",
+        "Exactly 1000 Wh/kg",
+        "Less than 300 Wh/kg"
+      ],
+      "question": "According to paragraph A, what is the expected energy density milestone for solid-state batteries in 2026?",
+      "correct_answer_index": 1
+    },
+    {
+      "options": [
+        "It has already fully replaced all 5G infrastructure.",
+        "It is currently in the initial specification phase.",
+        "It is mandatory for all mobile devices.",
+        "It provides speeds only in the gigabit range."
+      ],
+      "question": "Which statement regarding 6G technology is factually supported by paragraph A?",
+      "correct_answer_index": 1
+    },
+    {
+      "options": [
+        "Internal combustion engines are banned globally.",
+        "Solid-state battery production is cost-effective.",
+        "Autonomous vehicles exist in urban environments.",
+        "6G technology is in the initial specification phase."
+      ],
+      "question": "What is an inaccurate claim made in paragraph B compared to the context of paragraph A?",
+      "correct_answer_index": 0
+    }
+  ]
+}
