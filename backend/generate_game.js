@@ -32,9 +32,11 @@ const ExtractFactsSchema = z.object({
     })).length(3)
 });
 
-async function generate() {
+// Made the function exportable and allowed an optional customMode parameter for the front-end call
+export async function generate(customMode = null) {
+    // If called via function argument, use that; otherwise fall back to terminal flags/default
     const argv = yargs(hideBin(process.argv)).argv;
-    const mode = argv.mode || 'extract_facts';
+    const mode = customMode || argv.mode || 'extract_facts';
     
     // Chennai Local Date
     const now = new Date();
@@ -59,7 +61,9 @@ async function generate() {
                 const out = JSON.stringify(existing.content, null, 2);
                 fs.writeFileSync(`${mode}.json`, out);
                 process.stdout.write(out);
-                return;
+                
+                // Return the cached JSON object directly to the function caller
+                return existing.content;
             }
         }
 
@@ -121,12 +125,19 @@ async function generate() {
         fs.writeFileSync(`${mode}.json`, finalOutput);
         process.stdout.write(finalOutput);
 
+        // Return the freshly validated JSON object directly to the function caller
+        return validated;
+
     } catch (err) {
         console.error("🛑 SCRIPT ERROR:", err.message);
         if (err instanceof z.ZodError) {
             console.error("Validation Details:", JSON.stringify(err.errors, null, 2));
         }
+        throw err; // Forward error to the front-end wrapper handling the request
     }
 }
 
-generate();
+// Keep this check so it still runs if executed directly via terminal ("node generate_game.js")
+if (process.argv[1] && process.argv[1].endsWith('generate_game.js')) {
+    generate();
+}
