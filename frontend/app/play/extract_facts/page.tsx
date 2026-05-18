@@ -22,7 +22,6 @@ export default function ExtractFactsPage() {
 
   const contentScrollRef = useRef<HTMLDivElement>(null);
 
-  // Initialize Game Data strictly from our Server Action boundary
   useEffect(() => {
     async function loadGame() {
       setIsLoading(true);
@@ -34,8 +33,8 @@ export default function ExtractFactsPage() {
     }
     loadGame();
   }, []);
-  console.log("Data = ", gameData);
-  // Auto-scroll layout container to top during phase mutations
+  // console.log("Data = ", gameData);
+
   useEffect(() => {
     if (contentScrollRef.current) {
       contentScrollRef.current.scrollTop = 0;
@@ -49,7 +48,7 @@ export default function ExtractFactsPage() {
         <div className="text-center space-y-2">
           <div className="w-8 h-8 border-2 border-[#8B2626] border-t-transparent rounded-full animate-spin mx-auto" />
           <div className="text-[#8B2626] font-bold tracking-widest text-xs uppercase animate-pulse pt-2">
-            CALIBRATING ...
+            LOADING...
           </div>
         </div>
       </div>
@@ -86,11 +85,9 @@ export default function ExtractFactsPage() {
     window.location.href = "/";
   };
 
-  // Safe References to Server Data arrays
   const questions = gameData.mcq_questions;
   const currentQuestionItem = questions[currentQuizIndex];
 
-  // Client Validation Rule Logic
   const takeawayWordCount = takeawayText.trim()
     ? takeawayText.trim().split(/\s+/).filter(Boolean).length
     : 0;
@@ -99,7 +96,6 @@ export default function ExtractFactsPage() {
     return quizSelections[idx] === q.correct_answer_index ? score + 1 : score;
   }, 0);
 
-  // Fixed Structural Takeaway Facts Array
   const verifiedFactsMock = [
     "6G networks utilize distinct high-band spectrum architectures.",
     "Edge computing execution objectives focus on reducing raw latency metrics.",
