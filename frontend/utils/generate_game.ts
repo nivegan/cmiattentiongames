@@ -73,7 +73,7 @@ export async function generate(
   const offset = now.getTimezoneOffset() * 60000;
   const today = new Date(now.getTime() - offset).toISOString().split("T")[0];
   const todayDate = new Date(`${today}T00:00:00.000Z`);
-
+  // console.log("\n\n\n\n\n\n\n\n\n\nCheck\n\n\n\n\n\n\n\n\n\n\n");
   try {
     // 1. CHECK LOCK (Ignore malformed DB entries)
     const existing = await prisma.kalari_games.findUnique({
@@ -86,6 +86,7 @@ export async function generate(
       select: { content: true },
     });
 
+    // console.log("\n\n\n\n\n\n\n\n\n\nCheck2\n\n\n\n\n\n\n\n\n\n\n");
     if (existing?.content) {
       const content = existing.content as Record<string, unknown>;
       const hasGut = mode === "gut_check" && content.questions;
@@ -120,7 +121,9 @@ export async function generate(
               ]
             } (Provide exactly 3 questions in mcq_questions array)`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${GOOGLE_GENERATIVE_AI_API_KEY}`;
+    // const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GOOGLE_GENERATIVE_AI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_GENERATIVE_AI_API_KEY}`;
+    // const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${GOOGLE_GENERATIVE_AI_API_KEY}`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -130,8 +133,8 @@ export async function generate(
         generationConfig: { responseMimeType: "application/json" },
       }),
     });
-
     const data = await response.json();
+    // console.log("\n\n\n\n\n\n\n\n\n\nData = ", data, "\n\n\n\n\n\n\n\n\n");
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text as
       | string
       | undefined;

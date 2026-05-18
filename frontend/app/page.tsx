@@ -1,29 +1,42 @@
-import { Button } from "@/components/ui/button";
 import {
-  NavigationMenu,
-  NavigationMenuItem,
-  NavigationMenuList,
-} from "@/components/ui/navigation-menu";
+  Menubar,
+  MenubarContent,
+  MenubarItem,
+  MenubarMenu,
+  MenubarTrigger,
+} from "@/components/ui/menubar";
 import Link from "next/link";
-import React from "react";
 
 const HomePage = () => {
   return (
     <div>
-      <NavigationMenu>
-        <NavigationMenuList>
-          <NavigationMenuItem>
-            <Button>
-              <Link href="/history">History</Link>
-            </Button>
-          </NavigationMenuItem>
-          <NavigationMenuItem>
-            <Button>
-              <Link href="/settings">Settings</Link>
-            </Button>
-          </NavigationMenuItem>
-        </NavigationMenuList>
-      </NavigationMenu>
+      <Menubar>
+        <MenubarMenu>
+          <MenubarTrigger asChild>
+            <Link href="/history">History</Link>
+          </MenubarTrigger>
+        </MenubarMenu>
+
+        <MenubarMenu>
+          <MenubarTrigger asChild>
+            <Link href="/settings">Settings</Link>
+          </MenubarTrigger>
+        </MenubarMenu>
+
+        <MenubarMenu>
+          <MenubarTrigger>Play</MenubarTrigger>
+
+          <MenubarContent>
+            <MenubarItem asChild>
+              <Link href="/play/gut_check">Gut Check</Link>
+            </MenubarItem>
+
+            <MenubarItem asChild>
+              <Link href="/play/extract_facts">Extract Facts</Link>
+            </MenubarItem>
+          </MenubarContent>
+        </MenubarMenu>
+      </Menubar>
     </div>
   );
 };
