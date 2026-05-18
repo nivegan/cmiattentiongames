@@ -49,7 +49,7 @@ export default function ExtractFactsPage() {
         <div className="text-center space-y-2">
           <div className="w-8 h-8 border-2 border-[#8B2626] border-t-transparent rounded-full animate-spin mx-auto" />
           <div className="text-[#8B2626] font-bold tracking-widest text-xs uppercase animate-pulse pt-2">
-            CALIBRATING SECURE DOSSIER...
+            CALIBRATING ...
           </div>
         </div>
       </div>
