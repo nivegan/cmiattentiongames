@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, Check, HelpCircle } from "lucide-react";
 import { fetchServerGameData } from "./actions";
 import { ExtractFactsGame } from "@/utils/generate_game";
@@ -8,11 +8,8 @@ import { ExtractFactsGame } from "@/utils/generate_game";
 type AppPhase = "INTRO" | "QUIZ" | "TAKEAWAY" | "METRICS" | "COMPLETE";
 
 export default function ExtractFactsPage() {
-  // Server Data Hydration States
   const [gameData, setGameData] = useState<ExtractFactsGame | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  // Layout Machine Navigation & Tracking States
   const [phase, setPhase] = useState<AppPhase>("INTRO");
   const [currentQuizIndex, setCurrentQuizIndex] = useState<number>(0);
   const [quizSelections, setQuizSelections] = useState<Record<number, number>>(
@@ -21,6 +18,16 @@ export default function ExtractFactsPage() {
   const [takeawayText, setTakeawayText] = useState<string>("");
 
   const contentScrollRef = useRef<HTMLDivElement>(null);
+
+  const verifiedFacts = useMemo(() => {
+    if (!gameData || !gameData.paragraph_a) return [];
+
+    return gameData.paragraph_a
+      .split(/[.!?]/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 20)
+      .slice(0, 5);
+  }, [gameData]);
 
   useEffect(() => {
     async function loadGame() {
@@ -33,7 +40,6 @@ export default function ExtractFactsPage() {
     }
     loadGame();
   }, []);
-  // console.log("Data = ", gameData);
 
   useEffect(() => {
     if (contentScrollRef.current) {
@@ -41,7 +47,19 @@ export default function ExtractFactsPage() {
     }
   }, [phase, currentQuizIndex]);
 
-  // Fallback / Validation logic if Server Action misfires
+  const takeawayWordCount = takeawayText.trim()
+    ? takeawayText.trim().split(/\s+/).filter(Boolean).length
+    : 0;
+
+  const questions = gameData?.mcq_questions ?? [];
+  const currentQuestionItem = questions[currentQuizIndex];
+
+  // Track user scoring against dynamic answer keys
+  const correctCount = questions.reduce((score, q, idx) => {
+    return quizSelections[idx] === q.correct_answer_index ? score + 1 : score;
+  }, 0);
+
+  // Clean, Simplified LOADING... Status View
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#F4EFE6] text-[#3A221D] font-mono flex items-center justify-center p-4">
@@ -55,11 +73,7 @@ export default function ExtractFactsPage() {
     );
   }
 
-  if (
-    !gameData ||
-    !gameData.mcq_questions ||
-    gameData.mcq_questions.length === 0
-  ) {
+  if (!gameData || questions.length === 0) {
     return (
       <div className="min-h-screen bg-[#F4EFE6] text-[#3A221D] font-mono flex items-center justify-center p-4">
         <div className="bg-[#FAF8F5] border border-[#EF4444] p-6 max-w-sm text-center rounded shadow-sm">
@@ -80,29 +94,9 @@ export default function ExtractFactsPage() {
     );
   }
 
-  // Handle Global Navigation Routing Backwards
   const handleBackToHome = () => {
     window.location.href = "/";
   };
-
-  const questions = gameData.mcq_questions;
-  const currentQuestionItem = questions[currentQuizIndex];
-
-  const takeawayWordCount = takeawayText.trim()
-    ? takeawayText.trim().split(/\s+/).filter(Boolean).length
-    : 0;
-
-  const correctCount = questions.reduce((score, q, idx) => {
-    return quizSelections[idx] === q.correct_answer_index ? score + 1 : score;
-  }, 0);
-
-  const verifiedFactsMock = [
-    "6G networks utilize distinct high-band spectrum architectures.",
-    "Edge computing execution objectives focus on reducing raw latency metrics.",
-    "Real-time holographic processing requires clean multi-band signals.",
-    "Factual reporting frames differentiate infrastructure deployment from speculation.",
-    "Subjective analysis maps technological integration trajectories cleanly.",
-  ];
 
   return (
     <div className="min-h-screen bg-[#F4EFE6] text-[#3A221D] font-mono flex items-center justify-center p-0 sm:p-4 select-none antialiased relative selection:bg-[#8B2626]/20">
@@ -115,15 +109,15 @@ export default function ExtractFactsPage() {
         }}
       />
 
-      {/* Main Responsive Dossier Master Shell */}
+      {/* Main Responsive Dossier Master Shell Container */}
       <div className="w-full max-w-160 h-screen sm:h-220 bg-[#F9F6EE] sm:rounded-xl shadow-[0_16px_40px_rgba(58,34,29,0.15)] border-0 sm:border border-[#E6DEC9] flex flex-col overflow-hidden relative">
-        {/* Tactical Corner Overlays */}
+        {/* Decorative Framing Tactical Overlays */}
         <div className="absolute top-3 left-3 w-4 h-4 border-t-2 border-l-2 border-[#3A221D]/20 pointer-events-none" />
         <div className="absolute top-3 right-3 w-4 h-4 border-t-2 border-r-2 border-[#3A221D]/20 pointer-events-none" />
         <div className="absolute bottom-3 left-3 w-4 h-4 border-b-2 border-l-2 border-[#3A221D]/20 pointer-events-none" />
         <div className="absolute bottom-3 right-3 w-4 h-4 border-b-2 border-r-2 border-[#3A221D]/20 pointer-events-none" />
 
-        {/* HEADER REGION */}
+        {/* PERSISTENT RUNTIME HEADER */}
         {phase !== "COMPLETE" && (
           <header className="px-6 pt-5 pb-3 border-b border-[#E6DEC9]/60 bg-[#F9F6EE] z-20 shrink-0">
             <div className="flex items-center justify-between relative mb-4">
@@ -138,7 +132,7 @@ export default function ExtractFactsPage() {
                 <h1 className="text-base font-extrabold tracking-wider text-[#8B2626] uppercase">
                   Extract Facts
                 </h1>
-                <span className="text-[9px] font-bold tracking-widest text-[#7C6560] block uppercase opacity-80">
+                <span className="text-[9px] font-bold tracking-widest text-[#7C6560] block uppercase opacity-80 max-w-70 truncate">
                   TOPIC: {gameData.topic}
                 </span>
               </div>
@@ -168,7 +162,7 @@ export default function ExtractFactsPage() {
           className="flex-1 overflow-y-auto px-6 py-6 scroll-smooth min-h-0"
           style={{ paddingBottom: "100px" }}
         >
-          {/* PHASE 1: NARRATIVE READ BLOCK */}
+          {/* PHASE 1: NARRATIVE COMPONENT READ VIEW */}
           {phase === "INTRO" && (
             <div className="space-y-6 max-w-md mx-auto">
               <h2 className="text-center font-bold tracking-wide text-xs text-[#8B2626]/80 uppercase">
@@ -202,7 +196,7 @@ export default function ExtractFactsPage() {
             </div>
           )}
 
-          {/* PHASE 2: DYNAMIC SYSTEM MCQ RUNTIME */}
+          {/* PHASE 2: ACTIVE MULTI-QUESTION SYSTEM MCQ STEP COMPONENT */}
           {phase === "QUIZ" && currentQuestionItem && (
             <div className="space-y-5 max-w-md mx-auto">
               <div className="flex items-center justify-between">
@@ -279,7 +273,7 @@ export default function ExtractFactsPage() {
             </div>
           )}
 
-          {/* PHASE 3: REFLECTIVE ANALYSIS INPUT */}
+          {/* PHASE 3: INTERACTIVE SUBJECTIVE TAKEAWAY SELECTION */}
           {phase === "TAKEAWAY" && (
             <div className="space-y-5 max-w-md mx-auto">
               <h2 className="text-center font-extrabold tracking-wide text-xs text-[#8B2626] uppercase">
@@ -290,15 +284,23 @@ export default function ExtractFactsPage() {
                 <div className="flex items-center gap-2 text-xs font-bold text-[#22C55E] tracking-wider border-b border-[#E6DEC9] pb-2 mb-3 uppercase">
                   <span>✓</span> Empirical Facts Extracted
                 </div>
+
+                {/* Dynamically Populated Fact List */}
                 <ol className="space-y-2.5 text-[12px] leading-relaxed text-[#5C4540]">
-                  {verifiedFactsMock.map((fact, index) => (
+                  {verifiedFacts.map((fact, index) => (
                     <li key={index} className="flex gap-2 items-start">
                       <span className="font-bold text-[#8B2626] shrink-0">
                         {index + 1}.
                       </span>
-                      <span>{fact}</span>
+                      <span>{fact}.</span>
                     </li>
                   ))}
+                  {verifiedFacts.length === 0 && (
+                    <li className="text-[#7C6560] text-center italic py-2 text-[11px]">
+                      Compiling informational facts directly from payload
+                      metrics...
+                    </li>
+                  )}
                 </ol>
               </div>
 
@@ -326,7 +328,7 @@ export default function ExtractFactsPage() {
             </div>
           )}
 
-          {/* PHASE 4: TELEMETRY & METRIC EVALUATION RESULTS */}
+          {/* PHASE 4: REVEAL METRIC EVALUATION SCORES */}
           {phase === "METRICS" && (
             <div className="max-w-md mx-auto space-y-4">
               <h2 className="text-center font-extrabold tracking-wide text-xs text-[#8B2626] uppercase">
@@ -410,7 +412,7 @@ export default function ExtractFactsPage() {
             </div>
           )}
 
-          {/* PHASE 5: SUCCESS ARCHIVE TERMINAL */}
+          {/* PHASE 5: SUCCESS ARCHIVE ACHIEVEMENT BADGE */}
           {phase === "COMPLETE" && (
             <div className="max-w-md mx-auto text-center space-y-5 pt-6">
               <div className="inline-flex items-center justify-center w-11 h-11 bg-[#FAF8F5] border border-[#D9CDB3] shadow-[3px_3px_0px_#D9CDB3] rounded-sm">
@@ -454,8 +456,8 @@ export default function ExtractFactsPage() {
           )}
         </main>
 
-        {/* VIEWPORT BALANCED FIXED ACTION FOOTER CONTROLLER */}
-        <footer className="absolute bottom-0 inset-x-0 bg-linear-to-t from-[#F9F6EE] via-[#F9F6EE] to-[#F9F6EE]/0 px-6 pb-6 pt-8 z-20 flex flex-items justify-center">
+        {/* BOTTOM STICKY ACTIONS BANNER BLOCK */}
+        <footer className="absolute bottom-0 inset-x-0 bg-linear-to-t from-[#F9F6EE] via-[#F9F6EE] to-[#F9F6EE]/0 px-6 pb-6 pt-8 z-20 flex justify-center">
           {phase === "INTRO" && (
             <button
               onClick={() => setPhase("QUIZ")}
@@ -518,6 +520,7 @@ export default function ExtractFactsPage() {
           )}
         </footer>
 
+        {/* Floating Utility Help Trigger */}
         <button className="absolute bottom-4 right-4 w-7 h-7 bg-[#1A1514] hover:bg-[#2A2321] text-white rounded-full flex items-center justify-center shadow-lg transition-colors z-30">
           <HelpCircle className="w-3.5 h-3.5 text-[#FAF8F5]/80" />
         </button>
