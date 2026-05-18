@@ -1,15 +1,19 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
-import { ArrowLeft, Check, HelpCircle } from "lucide-react";
-import { fetchServerGameData } from "./actions";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { ArrowLeft, Check, HelpCircle, Loader2 } from "lucide-react";
+import { fetchServerGameData, saveUserGameStats } from "./actions";
 import { ExtractFactsGame } from "@/utils/generate_game";
 
 type AppPhase = "INTRO" | "QUIZ" | "TAKEAWAY" | "METRICS" | "COMPLETE";
 
 export default function ExtractFactsPage() {
+  // Server Data Hydration States
   const [gameData, setGameData] = useState<ExtractFactsGame | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSubmittingDb, setIsSubmittingDb] = useState<boolean>(false);
+
+  // Layout Machine Navigation & Tracking States
   const [phase, setPhase] = useState<AppPhase>("INTRO");
   const [currentQuizIndex, setCurrentQuizIndex] = useState<number>(0);
   const [quizSelections, setQuizSelections] = useState<Record<number, number>>(
@@ -19,16 +23,18 @@ export default function ExtractFactsPage() {
 
   const contentScrollRef = useRef<HTMLDivElement>(null);
 
+  // Memoized calculations declared at the top layer to satisfy the Rules of Hooks
   const verifiedFacts = useMemo(() => {
     if (!gameData || !gameData.paragraph_a) return [];
 
     return gameData.paragraph_a
-      .split(/[.!?]/)
+      .split(/[.!?]/) // Segregate text blocks by typical grammatical sentence terminations
       .map((sentence) => sentence.trim())
-      .filter((sentence) => sentence.length > 20)
-      .slice(0, 5);
+      .filter((sentence) => sentence.length > 20) // Filter out transient spaces or fragment micro-strings
+      .slice(0, 5); // Display a neat maximum cap of 5 key items
   }, [gameData]);
 
+  // Initialize Game Data strictly from our Server Action boundary
   useEffect(() => {
     async function loadGame() {
       setIsLoading(true);
@@ -41,23 +47,45 @@ export default function ExtractFactsPage() {
     loadGame();
   }, []);
 
+  // Auto-scroll layout container to top during phase mutations
   useEffect(() => {
     if (contentScrollRef.current) {
       contentScrollRef.current.scrollTop = 0;
     }
   }, [phase, currentQuizIndex]);
 
+  // Inline state analysis readouts
   const takeawayWordCount = takeawayText.trim()
     ? takeawayText.trim().split(/\s+/).filter(Boolean).length
     : 0;
-
   const questions = gameData?.mcq_questions ?? [];
   const currentQuestionItem = questions[currentQuizIndex];
 
-  // Track user scoring against dynamic answer keys
+  // Dynamically generated scoring metrics
   const correctCount = questions.reduce((score, q, idx) => {
     return quizSelections[idx] === q.correct_answer_index ? score + 1 : score;
   }, 0);
+
+  const finalComputedScore = useMemo(() => {
+    return correctCount * 30 + takeawayWordCount;
+  }, [correctCount, takeawayWordCount]);
+
+  // Triggers when advancing past the Metrics Review Phase
+  const handleMetricsCompletionSubmit = async () => {
+    setIsSubmittingDb(true);
+
+    // Fire our Server Action to push data right to PostgreSQL user_stats table
+    const dbTransaction = await saveUserGameStats(finalComputedScore);
+
+    setIsSubmittingDb(false);
+    if (dbTransaction.success) {
+      setPhase("COMPLETE");
+    } else {
+      alert(
+        "Metrics Sync Interrupted. Database tracking records could not verify save.",
+      );
+    }
+  };
 
   // Clean, Simplified LOADING... Status View
   if (isLoading) {
@@ -73,6 +101,7 @@ export default function ExtractFactsPage() {
     );
   }
 
+  // Fallback UI validation if server data fails to load or arrives malformed
   if (!gameData || questions.length === 0) {
     return (
       <div className="min-h-screen bg-[#F4EFE6] text-[#3A221D] font-mono flex items-center justify-center p-4">
@@ -94,13 +123,13 @@ export default function ExtractFactsPage() {
     );
   }
 
+  // Handle Global Navigation Routing Backwards to Home
   const handleBackToHome = () => {
     window.location.href = "/";
   };
 
   return (
     <div className="min-h-screen bg-[#F4EFE6] text-[#3A221D] font-mono flex items-center justify-center p-0 sm:p-4 select-none antialiased relative selection:bg-[#8B2626]/20">
-      {/* Background Lined Notebook Texture */}
       <div
         className="absolute inset-0 pointer-events-none opacity-[0.04]"
         style={{
@@ -109,7 +138,6 @@ export default function ExtractFactsPage() {
         }}
       />
 
-      {/* Main Responsive Dossier Master Shell Container */}
       <div className="w-full max-w-160 h-screen sm:h-220 bg-[#F9F6EE] sm:rounded-xl shadow-[0_16px_40px_rgba(58,34,29,0.15)] border-0 sm:border border-[#E6DEC9] flex flex-col overflow-hidden relative">
         {/* Decorative Framing Tactical Overlays */}
         <div className="absolute top-3 left-3 w-4 h-4 border-t-2 border-l-2 border-[#3A221D]/20 pointer-events-none" />
@@ -178,7 +206,7 @@ export default function ExtractFactsPage() {
                 </p>
               </div>
 
-              <div className="bg-[#FAF8F5] border-l-4 border-[#3B82F6] border-y border-r p-4 shadow-[4px_4px_0px_rgba(217,205,179,0.5)] rounded-r-sm">
+              <div className="bg-[#FAF8F5] border-l-4 border-y border-r border-[#D9CDB3] p-4 shadow-[4px_4px_0px_rgba(217,205,179,0.5)] rounded-r-sm">
                 <span className="text-xs font-bold text-[#3B82F6] tracking-wider block mb-2">
                   NARRATIVE B
                 </span>
@@ -285,7 +313,6 @@ export default function ExtractFactsPage() {
                   <span>✓</span> Empirical Facts Extracted
                 </div>
 
-                {/* Dynamically Populated Fact List */}
                 <ol className="space-y-2.5 text-[12px] leading-relaxed text-[#5C4540]">
                   {verifiedFacts.map((fact, index) => (
                     <li key={index} className="flex gap-2 items-start">
@@ -434,10 +461,7 @@ export default function ExtractFactsPage() {
                     Final Score
                   </span>
                   <span className="text-2xl font-black tracking-widest text-[#42F56C] block">
-                    {String(correctCount * 30 + takeawayWordCount).padStart(
-                      3,
-                      "0",
-                    )}
+                    {String(finalComputedScore).padStart(3, "0")}
                   </span>
                 </div>
                 <div className="pt-2 border-t border-[#E6DEC9]">
@@ -508,11 +532,27 @@ export default function ExtractFactsPage() {
               );
             })()}
 
-          {(phase === "METRICS" || phase === "COMPLETE") && (
+          {/* DYNAMIC DATABASE SYNC CONTROLLER DURING THE METRICS VIEW STEP */}
+          {phase === "METRICS" && (
             <button
-              onClick={() =>
-                phase === "METRICS" ? setPhase("COMPLETE") : handleBackToHome()
-              }
+              disabled={isSubmittingDb}
+              onClick={handleMetricsCompletionSubmit}
+              className="w-full max-w-md py-3.5 bg-[#8B2626] text-white font-extrabold text-xs tracking-widest uppercase rounded-sm shadow-[4px_4px_0px_#4A1212] hover:translate-x-px hover:translate-y-px hover:shadow-[3px_3px_0px_#4A1212] active:translate-x-0.75 active:translate-y-0.75 transition-all flex items-center justify-center gap-2"
+            >
+              {isSubmittingDb ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>SYNCING RECORDS...</span>
+                </>
+              ) : (
+                <span>Continue</span>
+              )}
+            </button>
+          )}
+
+          {phase === "COMPLETE" && (
+            <button
+              onClick={handleBackToHome}
               className="w-full max-w-md py-3.5 bg-[#8B2626] text-white font-extrabold text-xs tracking-widest uppercase rounded-sm shadow-[4px_4px_0px_#4A1212] hover:translate-x-px hover:translate-y-px hover:shadow-[3px_3px_0px_#4A1212] active:translate-x-0.75 active:translate-y-0.75 transition-all"
             >
               Continue
