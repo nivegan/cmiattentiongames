@@ -10,10 +10,10 @@ const getGameData = async (): Promise<GutCheckGame | null> => {
   }
 };
 
-const GutCheck = async () => {
+const GutCheckPage = async () => {
   const gameData = await getGameData();
   console.log(gameData);
   return <div>GutCheck</div>;
 };
 
-export default GutCheck;
+export default GutCheckPage;
