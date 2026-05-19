@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import yargs from "yargs";
@@ -6,8 +7,7 @@ import dotenv from "dotenv";
 
 dotenv.config({ path: ".env.local" });
 
-const { SUPABASE_URL, SUPABASE_KEY, GOOGLE_GENERATIVE_AI_API_KEY } =
-  process.env;
+const { SUPABASE_URL, SUPABASE_KEY, GOOGLE_GENERATIVE_AI_API_KEY } = process.env;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // 1. SCHEMAS WITH ROBUST PRE-PROCESSING
@@ -17,6 +17,10 @@ const GutCheckSchema = z.object({
     .array(
       z.object({
         anchor_statement: z.string(),
+        is_anchor_true: z.preprocess((val) => {
+          if (typeof val === 'string') return val.toLowerCase() === 'true';
+          return Boolean(val);
+        }, z.boolean()),
         the_real_number: z.preprocess((val) => parseFloat(val), z.number()),
         unit: z.string(),
         difficulty_level: z.string(),
@@ -43,54 +47,83 @@ const ExtractFactsSchema = z.object({
     .length(3),
 });
 
-// Made the function exportable and allowed an optional customMode parameter for the front-end call
-export async function generate(customMode = null) {
-  // If called via function argument, use that; otherwise fall back to terminal flags/default
+export async function generate(customMode = null, forceRefresh = false) {
   const argv = yargs(hideBin(process.argv)).argv;
   const mode = customMode || argv.mode || "extract_facts";
 
   // Chennai Local Date
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60000;
-  const today = new Date(now - offset).toISOString().split("T")[0];
+  const today = new Date(now - offset).toISOString().split('T')[0];
 
   try {
-    // 2. CHECK LOCK (Ignore malformed DB entries)
-    const { data: existing } = await supabase
-      .from("kalari_games")
-      .select("content")
-      .eq("mode", mode)
-      .eq("scheduled_for", today)
-      .maybeSingle();
+    // 2. CHECK LOCK (Skipped if forceRefresh is true)
+    if (!forceRefresh) {
+      const { data: existing } = await supabase
+        .from("kalari_games")
+        .select("content")
+        .eq("mode", mode)
+        .eq("scheduled_for", today)
+        .maybeSingle();
 
-    // console.log("\n\n\n\n\n\n\nCheckpoint\n\n\n\n\n\n\n");
-    // Validating structure before returning existing
-    if (existing && existing.content) {
-      const hasGut = mode === "gut_check" && existing.content.questions;
-      const hasFacts =
-        mode === "extract_facts" && existing.content.mcq_questions;
+      if (existing && existing.content) {
+        const hasGut = mode === "gut_check" && existing.content.questions;
+        const hasFacts = mode === "extract_facts" && existing.content.mcq_questions;
 
-      if (hasGut || hasFacts) {
-        const out = JSON.stringify(existing.content, null, 2);
-        process.stdout.write(out);
-
-        // Return the cached JSON object directly to the function caller
-        return existing.content;
+        // Ensure cached entry actually matches our updated structure requirements
+        if ((hasGut && existing.content.questions[0].hasOwnProperty('is_anchor_true')) || hasFacts) {
+          const out = JSON.stringify(existing.content, null, 2);
+          process.stdout.write(out);
+          return existing.content;
+        }
       }
     }
-    // console.log("\n\n\n\n\n\n\nCheckpoint2\n\n\n\n\n\n\n");
 
-    // 3. HARD-CODED PROMPT TEMPLATES (Ensures no hallucinations)
+    // 3. HARD-CODED PROMPT TEMPLATES (Ensures structure and format)
     let prompt = "";
     if (mode === "gut_check") {
       prompt = `Return ONLY a raw JSON object for 'Gut Check'.
-            Date: ${today}. Level: Increasing difficulty.
+            Date: ${today}.
+            
+            MANDATORY QUESTION STYLE:
+            Every single question must be phrased as a clear binary "Yes" or "No" baseline check about a real-world statistic or measurement. 
+            The sentence structure MUST ask if something is "greater than", "deeper than", "more than", "less than", or "exactly" a benchmark value.
+            
+            Examples of structural style (DO NOT COPY THE ENTITIES LITERALLY, CHOOSE A FRESH THEME):
+            - "Is the Burj Khalifa taller than 800 meters?" -> true
+            - "Does an empty Boeing 747 weigh less than 50,000 kilograms?" -> false
+            
+            Field Mapping Specifications:
+            1. 'anchor_statement': The literal "Yes/No" question text.
+            2. 'is_anchor_true': Boolean (true/false) representing whether the statement's claim is factually correct.
+            3. 'the_real_number': The exact, true, unrounded scientific/historical value. If the player answers "No" to your statement, the UI will use this number to ask: "Wrong, what is the correct number?"
+            4. Do not wrap the JSON output in markdown code blocks.
+
+            Expected JSON Structure:
             {
-                "industry_theme": "Industrial",
+                "industry_theme": "<A Creative, Specific Industry or Scientific Theme>",
                 "questions": [
-                    { "anchor_statement": "string", "the_real_number": 12.5, "unit": "unit", "difficulty_level": "Easy" },
-                    { "anchor_statement": "string", "the_real_number": 450, "unit": "unit", "difficulty_level": "Medium" },
-                    { "anchor_statement": "string", "the_real_number": 0.8, "unit": "unit", "difficulty_level": "Hard" }
+                    { 
+                        "anchor_statement": "<Clear Yes/No question containing a numeric baseline benchmark>", 
+                        "is_anchor_true": true,
+                        "the_real_number": 125.4, 
+                        "unit": "<unit>", 
+                        "difficulty_level": "Easy" 
+                    },
+                    { 
+                        "anchor_statement": "<Clear Yes/No question containing a numeric baseline benchmark>", 
+                        "is_anchor_true": false,
+                        "the_real_number": 450, 
+                        "unit": "<unit>", 
+                        "difficulty_level": "Medium" 
+                    },
+                    { 
+                        "anchor_statement": "<Clear Yes/No question containing a numeric baseline benchmark>", 
+                        "is_anchor_true": false,
+                        "the_real_number": 0.08, 
+                        "unit": "<unit>", 
+                        "difficulty_level": "Hard" 
+                    }
                 ]
             }`;
     } else {
@@ -105,6 +138,7 @@ export async function generate(customMode = null) {
                 ]
             } (Provide exactly 3 questions in mcq_questions array)`;
     }
+    
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GOOGLE_GENERATIVE_AI_API_KEY}`;
 
     const response = await fetch(url, {
@@ -117,7 +151,6 @@ export async function generate(customMode = null) {
     });
 
     const data = await response.json();
-    console.log("\n\n\n\n\n\n\n\n\n\nData = ", data, "\n\n\n\n\n\n\n\n\n");
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!rawText) throw new Error("API returned empty candidates.");
 
@@ -129,12 +162,11 @@ export async function generate(customMode = null) {
         ? GutCheckSchema.parse(parsed)
         : ExtractFactsSchema.parse(parsed);
 
-    // 5. UPSERT (Force overwrite of any "undefined" or broken entries for today)
+    // 5. UPSERT (Overwrites old data with the newly generated structured version)
     await supabase.from("kalari_games").upsert(
       {
         mode,
-        topic:
-          mode === "gut_check" ? validated.industry_theme : validated.topic,
+        topic: mode === "gut_check" ? validated.industry_theme : validated.topic,
         content: validated,
         scheduled_for: today,
       },
@@ -142,20 +174,21 @@ export async function generate(customMode = null) {
     );
 
     const finalOutput = JSON.stringify(validated, null, 2);
+    fs.writeFileSync(`${mode}.json`, finalOutput);
     process.stdout.write(finalOutput);
 
-    // Return the freshly validated JSON object directly to the function caller
     return validated;
   } catch (err) {
     console.error("🛑 SCRIPT ERROR:", err.message);
     if (err instanceof z.ZodError) {
       console.error("Validation Details:", JSON.stringify(err.errors, null, 2));
     }
-    throw err; // Forward error to the front-end wrapper handling the request
+    throw err;
   }
 }
 
-// Keep this check so it still runs if executed directly via terminal ("node generate_game.js")
-if (process.argv[1] && process.argv[1].endsWith("generate_game.js")) {
-  generate();
+// Check execution argument
+if (process.argv[1] && (process.argv[1].endsWith("generate_game.js") || process.argv[1].endsWith("generate_game.ts"))) {
+  // Pass true here once in your execution call to break the cache limit and test live generation!
+  generate(null, true); 
 }
