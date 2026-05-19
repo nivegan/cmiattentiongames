@@ -127,7 +127,7 @@ export default function GutCheckPage() {
         confidence: confVal,
         accuracy: calculatedAcc,
         score: roundCalibrationScore,
-        questionText: q.anchor_statement,
+        questionText: q.the_real_question,
         unit: q.unit,
         guess: guessVal,
         actual: trueVal,
@@ -172,7 +172,7 @@ export default function GutCheckPage() {
         <div className="text-center space-y-3">
           <div className="w-9 h-9 border-2 border-[#8B2626] border-t-transparent rounded-full animate-spin mx-auto" />
           <p className="text-[#8B2626] font-black tracking-widest text-xs uppercase animate-pulse">
-            LOADING CALIBRATION MATRIX...
+            LOADING...
           </p>
         </div>
       </div>
@@ -223,7 +223,7 @@ export default function GutCheckPage() {
               onClick={handleBackToHome}
               className="w-9 h-9 flex items-center justify-center bg-[#FAF6F0] border border-[#232323] shadow-[2px_2px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
             >
-              <ArrowLeft className="w-4 h-4 stroke-3" />
+              <ArrowLeft className="w-4 h-4" strokeWidth={3} />
             </button>
             <h1 className="text-xs font-black tracking-[0.25em] text-[#8B2626] uppercase">
               GUT CHECK
@@ -304,7 +304,7 @@ export default function GutCheckPage() {
               </div>
               <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
                 <p className="text-xs leading-relaxed text-[#232323] font-medium">
-                  {activeQuestion.anchor_statement} {activeQuestion.unit}?
+                  {activeQuestion.anchor_statement}
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -340,8 +340,7 @@ export default function GutCheckPage() {
               </div>
               <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
                 <p className="text-xs leading-relaxed text-[#232323] font-medium">
-                  To the nearest whole unit, what is the actual amount or size
-                  in {activeQuestion.unit}?
+                  {activeQuestion.the_real_question}
                 </p>
               </div>
               <div className="space-y-4">
@@ -475,23 +474,29 @@ export default function GutCheckPage() {
                   <span className="font-bold text-[#8B2626] block text-[9px] tracking-wider uppercase border-b border-[#232323]/10 pb-1">
                     ROUND BY ROUND:
                   </span>
-                  {calculatedPerformanceMetrics.breakdowns.map(
-                    (item: CalibrationItemBreakdown) => (
-                      <div
-                        key={item.roundNum}
-                        className="flex justify-between items-center text-[#232323]/90"
-                      >
-                        <span>ROUND {item.roundNum}:</span>
-                        <span>
-                          {item.confidence}% conf &nbsp;{item.accuracy}% acc
-                          &nbsp;
-                          <span className="font-bold text-[#8B2626]">
+                  <div className="space-y-1.5 pt-1">
+                    {calculatedPerformanceMetrics.breakdowns.map(
+                      (item: CalibrationItemBreakdown) => (
+                        <div
+                          key={item.roundNum}
+                          className="flex justify-between text-[#232323]/90 text-[10px] leading-none"
+                        >
+                          <span className="w-16 shrink-0">
+                            ROUND {item.roundNum}:
+                          </span>
+                          <span className="w-20 text-right shrink-0">
+                            {item.confidence}% conf
+                          </span>
+                          <span className="w-20 text-right shrink-0">
+                            {item.accuracy}% acc
+                          </span>
+                          <span className="w-10 text-right font-bold text-[#8B2626] shrink-0">
                             {item.score}
                           </span>
-                        </span>
-                      </div>
-                    ),
-                  )}
+                        </div>
+                      ),
+                    )}
+                  </div>
                 </div>
                 <div className="flex justify-between items-center border border-[#232323]/20 p-2.5 text-[10px] font-black tracking-wider">
                   <span>CALIBRATION QUALITY:</span>
@@ -537,12 +542,18 @@ export default function GutCheckPage() {
                     (item: CalibrationItemBreakdown) => (
                       <div
                         key={item.roundNum}
-                        className="flex justify-between text-[#232323]/80"
+                        className="flex justify-between text-[#232323]/80 text-[10px]"
                       >
-                        <span>ROUND {item.roundNum}</span>
-                        <span>{item.confidence}% CONF</span>
-                        <span>{item.accuracy}% ACC</span>
-                        <span className="font-bold text-[#8B2626]">
+                        <span className="w-16 shrink-0">
+                          ROUND {item.roundNum}
+                        </span>
+                        <span className="w-20 text-right shrink-0">
+                          {item.confidence}% CONF
+                        </span>
+                        <span className="w-20 text-right shrink-0">
+                          {item.accuracy}% ACC
+                        </span>
+                        <span className="w-10 text-right font-bold text-[#8B2626] shrink-0">
                           {item.score}
                         </span>
                       </div>
@@ -562,7 +573,7 @@ export default function GutCheckPage() {
                         className={`text-[11px] space-y-1.5 ${item.roundNum > 1 ? "pt-3" : ""}`}
                       >
                         <p className="font-bold text-[#8B2626] leading-tight">
-                          Q{item.roundNum}: {item.questionText} {item.unit}?
+                          Q{item.roundNum}: {item.questionText}
                         </p>
                         <div className="flex justify-between font-mono font-bold text-[#8B2626] text-[10px] pt-0.5">
                           <span>Your guess: {item.guess}</span>
