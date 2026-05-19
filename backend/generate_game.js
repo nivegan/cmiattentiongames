@@ -21,6 +21,7 @@ const GutCheckSchema = z.object({
           if (typeof val === 'string') return val.toLowerCase() === 'true';
           return Boolean(val);
         }, z.boolean()),
+        the_real_question: z.string(), // New field added for the numerical follow-up question
         the_real_number: z.preprocess((val) => parseFloat(val), z.number()),
         unit: z.string(),
         difficulty_level: z.string(),
@@ -70,8 +71,8 @@ export async function generate(customMode = null, forceRefresh = false) {
         const hasGut = mode === "gut_check" && existing.content.questions;
         const hasFacts = mode === "extract_facts" && existing.content.mcq_questions;
 
-        // Ensure cached entry actually matches our updated structure requirements
-        if ((hasGut && existing.content.questions[0].hasOwnProperty('is_anchor_true')) || hasFacts) {
+        // Verify cached entries match the latest updated properties
+        if ((hasGut && existing.content.questions[0].hasOwnProperty('the_real_question')) || hasFacts) {
           const out = JSON.stringify(existing.content, null, 2);
           process.stdout.write(out);
           return existing.content;
@@ -86,40 +87,41 @@ export async function generate(customMode = null, forceRefresh = false) {
             Date: ${today}.
             
             MANDATORY QUESTION STYLE:
-            Every single question must be phrased as a clear binary "Yes" or "No" baseline check about a real-world statistic or measurement. 
-            The sentence structure MUST ask if something is "greater than", "deeper than", "more than", "less than", or "exactly" a benchmark value.
-            
-            Examples of structural style (DO NOT COPY THE ENTITIES LITERALLY, CHOOSE A FRESH THEME):
-            - "Is the Burj Khalifa taller than 800 meters?" -> true
-            - "Does an empty Boeing 747 weigh less than 50,000 kilograms?" -> false
+            Every single question segment must consist of two steps:
+            1. An 'anchor_statement': Phrased as a clear binary "Yes/No" baseline check containing a numeric benchmark (e.g., "Is the Burj Khalifa taller than 800 meters?").
+            2. A 'the_real_question': A direct numerical question fallback styled to ask the user for the actual metrics if they guess incorrectly or encounter a false anchor (e.g., "What is the exact maximum height of the Burj Khalifa?").
             
             Field Mapping Specifications:
-            1. 'anchor_statement': The literal "Yes/No" question text.
-            2. 'is_anchor_true': Boolean (true/false) representing whether the statement's claim is factually correct.
-            3. 'the_real_number': The exact, true, unrounded scientific/historical value. If the player answers "No" to your statement, the UI will use this number to ask: "Wrong, what is the correct number?"
-            4. Do not wrap the JSON output in markdown code blocks.
+            1. 'anchor_statement': The literal "Yes/No" baseline statement text.
+            2. 'is_anchor_true': Boolean (true/false) indicating whether the initial 'anchor_statement' benchmark is factually accurate. Maintain a mix of true and false flags across the 3 questions.
+            3. 'the_real_question': The follow-up question string specifically asking for the exact parameter/measurement.
+            4. 'the_real_number': The absolute, precise, factually accurate raw numerical answer to 'the_real_question'.
+            5. Do not wrap the JSON output in markdown backticks or code blocks.
 
             Expected JSON Structure:
             {
                 "industry_theme": "<A Creative, Specific Industry or Scientific Theme>",
                 "questions": [
                     { 
-                        "anchor_statement": "<Clear Yes/No question containing a numeric baseline benchmark>", 
+                        "anchor_statement": "<Clear Yes/No question containing a numeric baseline boundary>", 
                         "is_anchor_true": true,
+                        "the_real_question": "<Follow-up question requesting the actual target metric>",
                         "the_real_number": 125.4, 
                         "unit": "<unit>", 
                         "difficulty_level": "Easy" 
                     },
                     { 
-                        "anchor_statement": "<Clear Yes/No question containing a numeric baseline benchmark>", 
+                        "anchor_statement": "<Clear Yes/No question containing a numeric baseline boundary>", 
                         "is_anchor_true": false,
+                        "the_real_question": "<Follow-up question requesting the actual target metric>",
                         "the_real_number": 450, 
                         "unit": "<unit>", 
                         "difficulty_level": "Medium" 
                     },
                     { 
-                        "anchor_statement": "<Clear Yes/No question containing a numeric baseline benchmark>", 
+                        "anchor_statement": "<Clear Yes/No question containing a numeric baseline boundary>", 
                         "is_anchor_true": false,
+                        "the_real_question": "<Follow-up question requesting the actual target metric>",
                         "the_real_number": 0.08, 
                         "unit": "<unit>", 
                         "difficulty_level": "Hard" 
@@ -162,7 +164,7 @@ export async function generate(customMode = null, forceRefresh = false) {
         ? GutCheckSchema.parse(parsed)
         : ExtractFactsSchema.parse(parsed);
 
-    // 5. UPSERT (Overwrites old data with the newly generated structured version)
+    // 5. UPSERT (Overwrites database entry with the newly added text fields)
     await supabase.from("kalari_games").upsert(
       {
         mode,
@@ -189,6 +191,6 @@ export async function generate(customMode = null, forceRefresh = false) {
 
 // Check execution argument
 if (process.argv[1] && (process.argv[1].endsWith("generate_game.js") || process.argv[1].endsWith("generate_game.ts"))) {
-  // Pass true here once in your execution call to break the cache limit and test live generation!
+  // Keeping cache-bypass on for this run to build out the new key structure live
   generate(null, true); 
 }
