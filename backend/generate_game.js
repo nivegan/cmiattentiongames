@@ -142,11 +142,13 @@ export async function generate(customMode = null, forceRefresh = false) {
             
             THEME AND VOICE INSTRUCTIONS:
             1. Topic Choice: Pick a generalized, completely non-political and non-controversial real-world scene, trend, or human interest event (e.g., city infrastructure updates, neighborhood library hours, community sports, historical updates, or public space re-routing).
-            2. ABSOLUTE FILTER: Do NOT include any political parties, politician names, government election disputes, polarizing social debates, or sensitive geopolitical events. Keep topics entirely safe, constructive, and generalized.
+            2. ABSOLUTE FILTER: Do NOT include any political parties, politician names, government election disputes, or sensitive geopolitical events. Keep topics entirely safe, constructive, and generalized.
             3. Style, Tone & Sentiment Variance: Write paragraphs formatted to simulate a concise local news blurb, a high-engagement social media post, or a fast tabloid snippet. Infuse the text with different emotional nuances, tones, or vocabulary framing.
             4. THE CORE DIFFERENCE: The differences between the two paragraphs do NOT need to be numbers. Instead, focus heavily on structural sentiment swaps and perspective spins. For example, Paragraph A might say "traffic was smoothly diverted for a passionate, peaceful community demonstration" while Paragraph B says "commuters faced major gridlock and blocked roads due to an disruptive public protest."
             5. Strict Length Constraint: Both 'paragraph_a' and 'paragraph_b' must be kept crisp and short, fitting within a standard 280-character Twitter length limit.
             6. Formatting Rule: Do NOT include any quotation marks (" or ') anywhere inside the paragraphs. 
+            7. Do not accidently take a direct quote from any tabloid, news source, or social media post. The text should be freshly generated and not lifted verbatim from any existing source.
+            
             
             GAME DATA LOGIC:
             - Provide a unified, generalized 'topic'.
