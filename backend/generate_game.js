@@ -21,7 +21,7 @@ const GutCheckSchema = z.object({
           if (typeof val === 'string') return val.toLowerCase() === 'true';
           return Boolean(val);
         }, z.boolean()),
-        the_real_question: z.string(), // New field added for the numerical follow-up question
+        the_real_question: z.string(),
         the_real_number: z.preprocess((val) => parseFloat(val), z.number()),
         unit: z.string(),
         difficulty_level: z.string(),
@@ -71,7 +71,6 @@ export async function generate(customMode = null, forceRefresh = false) {
         const hasGut = mode === "gut_check" && existing.content.questions;
         const hasFacts = mode === "extract_facts" && existing.content.mcq_questions;
 
-        // Verify cached entries match the latest updated properties
         if ((hasGut && existing.content.questions[0].hasOwnProperty('the_real_question')) || hasFacts) {
           const out = JSON.stringify(existing.content, null, 2);
           process.stdout.write(out);
@@ -80,9 +79,12 @@ export async function generate(customMode = null, forceRefresh = false) {
       }
     }
 
-    // 3. HARD-CODED PROMPT TEMPLATES (Ensures structure and format)
+    // 3. HARD-CODED PROMPT TEMPLATES
     let prompt = "";
     if (mode === "gut_check") {
+      // ==========================================
+      // START OF GUT CHECK PROMPT
+      // ==========================================
       prompt = `Return ONLY a raw JSON object for 'Gut Check'.
             Date: ${today}.
             
@@ -128,17 +130,57 @@ export async function generate(customMode = null, forceRefresh = false) {
                     }
                 ]
             }`;
+      // ==========================================
+      // END OF GUT CHECK PROMPT
+      // ==========================================
     } else {
+      // ==========================================
+      // START OF EXTRACT FACTS PROMPT
+      // ==========================================
       prompt = `Return ONLY a raw JSON object for 'Extract the Facts'.
-            Date: ${today}. Level: Complex logic.
+            Date: ${today}.
+            
+            THEME AND VOICE INSTRUCTIONS:
+            1. Topic Choice: Pick a generalized, completely non-political and non-controversial real-world scene, trend, or human interest event (e.g., city infrastructure updates, neighborhood library hours, community sports, historical updates, or public space re-routing).
+            2. ABSOLUTE FILTER: Do NOT include any political parties, politician names, government election disputes, polarizing social debates, or sensitive geopolitical events. Keep topics entirely safe, constructive, and generalized.
+            3. Style, Tone & Sentiment Variance: Write paragraphs formatted to simulate a concise local news blurb, a high-engagement social media post, or a fast tabloid snippet. Infuse the text with different emotional nuances, tones, or vocabulary framing.
+            4. THE CORE DIFFERENCE: The differences between the two paragraphs do NOT need to be numbers. Instead, focus heavily on structural sentiment swaps and perspective spins. For example, Paragraph A might say "traffic was smoothly diverted for a passionate, peaceful community demonstration" while Paragraph B says "commuters faced major gridlock and blocked roads due to an disruptive public protest."
+            5. Strict Length Constraint: Both 'paragraph_a' and 'paragraph_b' must be kept crisp and short, fitting within a standard 280-character Twitter length limit.
+            6. Formatting Rule: Do NOT include any quotation marks (" or ') anywhere inside the paragraphs. 
+            
+            GAME DATA LOGIC:
+            - Provide a unified, generalized 'topic'.
+            - 'paragraph_a' and 'paragraph_b' must describe the exact same real-world scene but spin the underlying sentiment details, vocabulary framing, or qualitative facts between them.
+            - Generate exactly 3 multiple-choice questions ('mcq_questions') that specifically test the user's sharp attention to detail regarding these altered sentiment-driven perspectives, phrasing disparities, or facts.
+            - Each question must have exactly 4 strings in the 'options' array, and a 'correct_answer_index' (0 to 3).
+            - Do not wrap the output in markdown code blocks.
+
+            Expected JSON Structure:
             {
-                "topic": "Future Technology",
-                "paragraph_a": "Detailed factual paragraph.",
-                "paragraph_b": "Detailed but slightly inaccurate paragraph.",
+                "topic": "<General Non-Controversial Real-World Trend or Event>",
+                "paragraph_a": "<Crisp text under 280 characters with a distinct emotional perspective, no quotes>",
+                "paragraph_b": "<Crisp text under 280 characters describing the same scene with a contrasting sentiment/vocabulary spin, no quotes>",
                 "mcq_questions": [
-                    { "question": "string", "options": ["A", "B", "C", "D"], "correct_answer_index": 1 }
+                    {
+                        "question": "<Analytical question testing differences in sentiment, wording, or facts between the texts>",
+                        "options": ["Option A", "Option B", "Option C", "Option D"],
+                        "correct_answer_index": 0
+                    },
+                    {
+                        "question": "<Analytical question testing differences in sentiment, wording, or facts between the texts>",
+                        "options": ["Option A", "Option B", "Option C", "Option D"],
+                        "correct_answer_index": 2
+                    },
+                    {
+                        "question": "<Analytical question testing differences in sentiment, wording, or facts between the texts>",
+                        "options": ["Option A", "Option B", "Option C", "Option D"],
+                        "correct_answer_index": 1
+                    }
                 ]
-            } (Provide exactly 3 questions in mcq_questions array)`;
+            }`;
+      // ==========================================
+      // END OF EXTRACT FACTS PROMPT
+      // ==========================================
     }
     
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GOOGLE_GENERATIVE_AI_API_KEY}`;
@@ -164,7 +206,7 @@ export async function generate(customMode = null, forceRefresh = false) {
         ? GutCheckSchema.parse(parsed)
         : ExtractFactsSchema.parse(parsed);
 
-    // 5. UPSERT (Overwrites database entry with the newly added text fields)
+    // 5. UPSERT
     await supabase.from("kalari_games").upsert(
       {
         mode,
@@ -191,6 +233,5 @@ export async function generate(customMode = null, forceRefresh = false) {
 
 // Check execution argument
 if (process.argv[1] && (process.argv[1].endsWith("generate_game.js") || process.argv[1].endsWith("generate_game.ts"))) {
-  // Keeping cache-bypass on for this run to build out the new key structure live
   generate(null, true); 
 }
