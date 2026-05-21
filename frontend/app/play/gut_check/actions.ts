@@ -1,40 +1,80 @@
 "use server";
 
-import { PrismaClient } from "@/lib/generated/prisma/client";
 import { GutCheckGame, generate } from "@/utils/generate_game";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { auth } from "@clerk/nextjs/server";
 import dotenv from "dotenv";
+import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
+import { getCurrentDayRange } from "@/utils/getCurrentDayRange";
+import { prisma } from "@/utils/prismaInit";
 dotenv.config();
 
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL!,
-});
+const checkHasPlayedToday = async (targetId: string): Promise<boolean> => {
+  const { start, end } = getCurrentDayRange();
+  const dbSafeUuid = safeFormatToUuid(targetId);
+  console.log(start);
+  console.log(end);
+  const existingRecord = await prisma.user_stats.findFirst({
+    where: {
+      user_id: dbSafeUuid,
+      game_type_id: "GUT_CHECK",
+      created_at: {
+        gte: start,
+        lte: end,
+      },
+    },
+  });
+  console.log(existingRecord);
+  return !!existingRecord;
+};
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
-const prisma = globalForPrisma.prisma || new PrismaClient({ adapter });
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
-
-const fetchServerGameData = async (): Promise<GutCheckGame | null> => {
+const fetchServerGameData = async (
+  deviceId: string,
+): Promise<{
+  success: boolean;
+  data: GutCheckGame | null;
+  error?: "ALREADY_PLAYED" | "UNKNOWN";
+}> => {
   try {
+    const { userId } = await auth();
+    const targetIdentifier = userId || deviceId;
+
+    if (targetIdentifier) {
+      const played = await checkHasPlayedToday(targetIdentifier);
+      if (played) {
+        return { success: false, data: null, error: "ALREADY_PLAYED" };
+      }
+    }
+
     const result = await generate("gut_check");
-    return result as GutCheckGame;
+    return { success: true, data: result as GutCheckGame };
   } catch (error) {
     console.error("Error generating gut check game metadata payload:", error);
-    return null;
+    return { success: false, data: null, error: "UNKNOWN" };
   }
 };
 
 const saveUserGameStats = async (
   score: number,
-): Promise<{ success: boolean; error?: string }> => {
+  deviceId: string,
+): Promise<{ success: boolean; error?: "ALREADY_PLAYED" | string }> => {
   try {
+    const { userId } = await auth();
+    const targetIdentifier = userId || deviceId;
+
+    if (targetIdentifier) {
+      const played = await checkHasPlayedToday(targetIdentifier);
+      if (played) {
+        return { success: false, error: "ALREADY_PLAYED" };
+      }
+    }
+
     const rowId = globalThis.crypto.randomUUID();
-    const mockUserId = globalThis.crypto.randomUUID();
+    const dbSafeUuid = safeFormatToUuid(targetIdentifier);
 
     await prisma.user_stats.create({
       data: {
         id: rowId,
-        user_id: mockUserId,
+        user_id: dbSafeUuid,
         game_type_id: "GUT_CHECK",
         difficulty_band: 1.0,
         score: score,

@@ -1,19 +1,22 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { ArrowLeft, Check, HelpCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, Check, Loader2 } from "lucide-react";
 import { fetchServerGameData, saveUserGameStats } from "./actions";
 import { ExtractFactsGame } from "@/utils/generate_game";
+import { useRouter } from "next/navigation";
 
 type AppPhase = "INTRO" | "QUIZ" | "TAKEAWAY" | "METRICS" | "COMPLETE";
 
-export default function ExtractFactsPage() {
-  // Server Data Hydration States
+const ExtractFactsPage = () => {
+  const router = useRouter();
+
   const [gameData, setGameData] = useState<ExtractFactsGame | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmittingDb, setIsSubmittingDb] = useState<boolean>(false);
 
-  // Layout Machine Navigation & Tracking States
+  const [deviceId, setDeviceId] = useState<string>("");
+
   const [phase, setPhase] = useState<AppPhase>("INTRO");
   const [currentQuizIndex, setCurrentQuizIndex] = useState<number>(0);
   const [quizSelections, setQuizSelections] = useState<Record<number, number>>(
@@ -23,45 +26,53 @@ export default function ExtractFactsPage() {
 
   const contentScrollRef = useRef<HTMLDivElement>(null);
 
-  // Memoized calculations declared at the top layer to satisfy the Rules of Hooks
   const verifiedFacts = useMemo(() => {
     if (!gameData || !gameData.paragraph_a) return [];
 
     return gameData.paragraph_a
-      .split(/[.!?]/) // Segregate text blocks by typical grammatical sentence terminations
+      .split(/[.!?]/)
       .map((sentence) => sentence.trim())
-      .filter((sentence) => sentence.length > 20) // Filter out transient spaces or fragment micro-strings
-      .slice(0, 5); // Display a neat maximum cap of 5 key items
+      .filter((sentence) => sentence.length > 20)
+      .slice(0, 5);
   }, [gameData]);
 
-  // Initialize Game Data strictly from our Server Action boundary
   useEffect(() => {
     async function loadGame() {
       setIsLoading(true);
-      const data = await fetchServerGameData();
-      if (data) {
-        setGameData(data);
+      let localDevice = localStorage.getItem("meta_mind_global_device_id");
+      if (!localDevice) {
+        localDevice = window.crypto.randomUUID();
+        localStorage.setItem("meta_mind_global_device_id", localDevice);
+      }
+      setDeviceId(localDevice);
+      const response = await fetchServerGameData(localDevice);
+
+      if (!response.success) {
+        if (response.error === "ALREADY_PLAYED") {
+          router.push("/");
+          return;
+        }
+      }
+
+      if (response.data) {
+        setGameData(response.data);
       }
       setIsLoading(false);
     }
     loadGame();
-  }, []);
+  }, [router]);
 
-  // Auto-scroll layout container to top during phase mutations
   useEffect(() => {
     if (contentScrollRef.current) {
       contentScrollRef.current.scrollTop = 0;
     }
   }, [phase, currentQuizIndex]);
 
-  // Inline state analysis readouts
   const takeawayWordCount = takeawayText.trim()
     ? takeawayText.trim().split(/\s+/).filter(Boolean).length
     : 0;
   const questions = gameData?.mcq_questions ?? [];
   const currentQuestionItem = questions[currentQuizIndex];
-
-  // Dynamically generated scoring metrics
   const correctCount = questions.reduce((score, q, idx) => {
     return quizSelections[idx] === q.correct_answer_index ? score + 1 : score;
   }, 0);
@@ -70,16 +81,15 @@ export default function ExtractFactsPage() {
     return correctCount * 30 + takeawayWordCount;
   }, [correctCount, takeawayWordCount]);
 
-  // Triggers when advancing past the Metrics Review Phase
   const handleMetricsCompletionSubmit = async () => {
     setIsSubmittingDb(true);
-
-    // Fire our Server Action to push data right to PostgreSQL user_stats table
-    const dbTransaction = await saveUserGameStats(finalComputedScore);
+    const dbTransaction = await saveUserGameStats(finalComputedScore, deviceId);
 
     setIsSubmittingDb(false);
     if (dbTransaction.success) {
       setPhase("COMPLETE");
+    } else if (dbTransaction.error === "ALREADY_PLAYED") {
+      router.push("/");
     } else {
       alert(
         "Metrics Sync Interrupted. Database tracking records could not verify save.",
@@ -87,7 +97,10 @@ export default function ExtractFactsPage() {
     }
   };
 
-  // Clean, Simplified LOADING... Status View
+  const handleBackToHome = () => {
+    router.push("/");
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#F4EFE6] text-[#3A221D] font-mono flex items-center justify-center p-4">
@@ -101,7 +114,6 @@ export default function ExtractFactsPage() {
     );
   }
 
-  // Fallback UI validation if server data fails to load or arrives malformed
   if (!gameData || questions.length === 0) {
     return (
       <div className="min-h-screen bg-[#F4EFE6] text-[#3A221D] font-mono flex items-center justify-center p-4">
@@ -123,11 +135,6 @@ export default function ExtractFactsPage() {
     );
   }
 
-  // Handle Global Navigation Routing Backwards to Home
-  const handleBackToHome = () => {
-    window.location.href = "/";
-  };
-
   return (
     <div className="min-h-screen bg-[#F4EFE6] text-[#3A221D] font-mono flex items-center justify-center p-0 sm:p-4 select-none antialiased relative selection:bg-[#8B2626]/20">
       <div
@@ -139,13 +146,11 @@ export default function ExtractFactsPage() {
       />
 
       <div className="w-full max-w-160 h-screen sm:h-220 bg-[#F9F6EE] sm:rounded-xl shadow-[0_16px_40px_rgba(58,34,29,0.15)] border-0 sm:border border-[#E6DEC9] flex flex-col overflow-hidden relative">
-        {/* Decorative Framing Tactical Overlays */}
         <div className="absolute top-3 left-3 w-4 h-4 border-t-2 border-l-2 border-[#3A221D]/20 pointer-events-none" />
         <div className="absolute top-3 right-3 w-4 h-4 border-t-2 border-r-2 border-[#3A221D]/20 pointer-events-none" />
         <div className="absolute bottom-3 left-3 w-4 h-4 border-b-2 border-l-2 border-[#3A221D]/20 pointer-events-none" />
         <div className="absolute bottom-3 right-3 w-4 h-4 border-b-2 border-r-2 border-[#3A221D]/20 pointer-events-none" />
 
-        {/* PERSISTENT RUNTIME HEADER */}
         {phase !== "COMPLETE" && (
           <header className="px-6 pt-5 pb-3 border-b border-[#E6DEC9]/60 bg-[#F9F6EE] z-20 shrink-0">
             <div className="flex items-center justify-between relative mb-4">
@@ -184,13 +189,11 @@ export default function ExtractFactsPage() {
           </header>
         )}
 
-        {/* SCROLLABLE INTERACTION WORKSPACE */}
         <main
           ref={contentScrollRef}
           className="flex-1 overflow-y-auto px-6 py-6 scroll-smooth min-h-0"
           style={{ paddingBottom: "100px" }}
         >
-          {/* PHASE 1: NARRATIVE COMPONENT READ VIEW */}
           {phase === "INTRO" && (
             <div className="space-y-6 max-w-md mx-auto">
               <h2 className="text-center font-bold tracking-wide text-xs text-[#8B2626]/80 uppercase">
@@ -224,7 +227,6 @@ export default function ExtractFactsPage() {
             </div>
           )}
 
-          {/* PHASE 2: ACTIVE MULTI-QUESTION SYSTEM MCQ STEP COMPONENT */}
           {phase === "QUIZ" && currentQuestionItem && (
             <div className="space-y-5 max-w-md mx-auto">
               <div className="flex items-center justify-between">
@@ -301,7 +303,6 @@ export default function ExtractFactsPage() {
             </div>
           )}
 
-          {/* PHASE 3: INTERACTIVE SUBJECTIVE TAKEAWAY SELECTION */}
           {phase === "TAKEAWAY" && (
             <div className="space-y-5 max-w-md mx-auto">
               <h2 className="text-center font-extrabold tracking-wide text-xs text-[#8B2626] uppercase">
@@ -355,7 +356,6 @@ export default function ExtractFactsPage() {
             </div>
           )}
 
-          {/* PHASE 4: REVEAL METRIC EVALUATION SCORES */}
           {phase === "METRICS" && (
             <div className="max-w-md mx-auto space-y-4">
               <h2 className="text-center font-extrabold tracking-wide text-xs text-[#8B2626] uppercase">
@@ -439,7 +439,6 @@ export default function ExtractFactsPage() {
             </div>
           )}
 
-          {/* PHASE 5: SUCCESS ARCHIVE ACHIEVEMENT BADGE */}
           {phase === "COMPLETE" && (
             <div className="max-w-md mx-auto text-center space-y-5 pt-6">
               <div className="inline-flex items-center justify-center w-11 h-11 bg-[#FAF8F5] border border-[#D9CDB3] shadow-[3px_3px_0px_#D9CDB3] rounded-sm">
@@ -480,7 +479,6 @@ export default function ExtractFactsPage() {
           )}
         </main>
 
-        {/* BOTTOM STICKY ACTIONS BANNER BLOCK */}
         <footer className="absolute bottom-0 inset-x-0 bg-linear-to-t from-[#F9F6EE] via-[#F9F6EE] to-[#F9F6EE]/0 px-6 pb-6 pt-8 z-20 flex justify-center">
           {phase === "INTRO" && (
             <button
@@ -532,7 +530,6 @@ export default function ExtractFactsPage() {
               );
             })()}
 
-          {/* DYNAMIC DATABASE SYNC CONTROLLER DURING THE METRICS VIEW STEP */}
           {phase === "METRICS" && (
             <button
               disabled={isSubmittingDb}
@@ -559,12 +556,9 @@ export default function ExtractFactsPage() {
             </button>
           )}
         </footer>
-
-        {/* Floating Utility Help Trigger */}
-        <button className="absolute bottom-4 right-4 w-7 h-7 bg-[#1A1514] hover:bg-[#2A2321] text-white rounded-full flex items-center justify-center shadow-lg transition-colors z-30">
-          <HelpCircle className="w-3.5 h-3.5 text-[#FAF8F5]/80" />
-        </button>
       </div>
     </div>
   );
-}
+};
+
+export default ExtractFactsPage;

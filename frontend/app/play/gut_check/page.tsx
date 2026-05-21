@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { fetchServerGameData, saveUserGameStats } from "./actions";
 import { GutCheckGame } from "@/utils/generate_game";
+import { useRouter } from "next/navigation";
 
 type AppPhase =
   | "WELCOME"
@@ -37,10 +38,13 @@ interface PerformanceMetrics {
   breakdowns: CalibrationItemBreakdown[];
 }
 
-export default function GutCheckPage() {
+const GutCheckPage = () => {
+  const router = useRouter();
   const [gameData, setGameData] = useState<GutCheckGame | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmittingDb, setIsSubmittingDb] = useState<boolean>(false);
+
+  const [deviceId, setDeviceId] = useState<string>("");
 
   const [phase, setPhase] = useState<AppPhase>("WELCOME");
   const [currentRoundIndex, setCurrentRoundIndex] = useState<number>(0);
@@ -56,14 +60,30 @@ export default function GutCheckPage() {
   useEffect(() => {
     async function loadGame() {
       setIsLoading(true);
-      const data = await fetchServerGameData();
-      if (data) {
-        setGameData(data);
+
+      let localDevice = localStorage.getItem("meta_mind_global_device_id");
+      if (!localDevice) {
+        localDevice = window.crypto.randomUUID();
+        localStorage.setItem("meta_mind_global_device_id", localDevice);
+      }
+      setDeviceId(localDevice);
+
+      const response = await fetchServerGameData(localDevice);
+
+      if (!response.success) {
+        if (response.error === "ALREADY_PLAYED") {
+          router.push("/");
+          return;
+        }
+      }
+
+      if (response.data) {
+        setGameData(response.data);
       }
       setIsLoading(false);
     }
     loadGame();
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (containerScrollRef.current) {
@@ -72,7 +92,7 @@ export default function GutCheckPage() {
   }, [phase, currentRoundIndex]);
 
   const handleBackToHome = () => {
-    window.location.href = "/";
+    router.push("/");
   };
 
   const totalRounds = gameData?.questions?.length ?? 3;
@@ -154,11 +174,14 @@ export default function GutCheckPage() {
     setIsSubmittingDb(true);
     const connectionResult = await saveUserGameStats(
       calculatedPerformanceMetrics.overallScore,
+      deviceId,
     );
     setIsSubmittingDb(false);
 
     if (connectionResult.success) {
       setPhase("RESULTS");
+    } else if (connectionResult.error === "ALREADY_PLAYED") {
+      router.push("/");
     } else {
       alert(
         "Metrics Sync Interrupted. Database tracking records could not verify save operations.",
@@ -297,11 +320,6 @@ export default function GutCheckPage() {
           {/* ANCHOR PHASE */}
           {phase === "ANCHOR" && activeQuestion && (
             <div className="space-y-6 animate-fadeIn">
-              <div className="text-center">
-                <h2 className="text-[11px] font-black tracking-widest text-[#8B2626] uppercase">
-                  THE ANCHOR
-                </h2>
-              </div>
               <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
                 <p className="text-xs leading-relaxed text-[#232323] font-medium">
                   {activeQuestion.anchor_statement}
@@ -333,11 +351,6 @@ export default function GutCheckPage() {
           {/* REAL QUESTION PHASE */}
           {phase === "REAL_QUESTION" && activeQuestion && (
             <div className="space-y-5 animate-fadeIn">
-              <div className="text-center">
-                <h2 className="text-[11px] font-black tracking-widest text-[#8B2626] uppercase">
-                  THE REAL QUESTION
-                </h2>
-              </div>
               <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
                 <p className="text-xs leading-relaxed text-[#232323] font-medium">
                   {activeQuestion.the_real_question}
@@ -596,4 +609,6 @@ export default function GutCheckPage() {
       </div>
     </div>
   );
-}
+};
+
+export default GutCheckPage;

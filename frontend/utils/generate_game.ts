@@ -1,22 +1,16 @@
 import { z } from "zod";
-import { PrismaClient } from "../lib/generated/prisma/client";
 import dotenv from "dotenv";
-import { PrismaPg } from "@prisma/adapter-pg";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
+import { prisma } from "./prismaInit";
 
-dotenv.config({ path: ".env.local" });
+dotenv.config();
 
 const { GOOGLE_GENERATIVE_AI_API_KEY, DATABASE_URL } = process.env;
 
 if (!GOOGLE_GENERATIVE_AI_API_KEY || !DATABASE_URL) {
   throw new Error("Missing required environment variables.");
 }
-
-const adapter = new PrismaPg({
-  connectionString: DATABASE_URL,
-});
-export const prisma = new PrismaClient({ adapter });
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -69,10 +63,10 @@ const ExtractFactsSchema = z.object({
 
 // ── Exported function ──────────────────────────────────────────────────────
 
-export async function generate(
+const generate = async (
   customMode: GameMode | null = null,
   forceRefresh: boolean = false,
-): Promise<GameResult> {
+): Promise<GameResult> => {
   const argv = yargs(hideBin(process.argv)).argv as { mode?: string };
   const mode: GameMode = (customMode ||
     argv.mode ||
@@ -245,4 +239,6 @@ export async function generate(
   } finally {
     await prisma.$disconnect();
   }
-}
+};
+
+export { generate };
