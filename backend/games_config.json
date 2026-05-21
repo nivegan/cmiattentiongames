@@ -1,0 +1,56 @@
+[
+  {
+    "game_type_id": "steady_gaze",
+    "display_name": "Steady Gaze",
+    "category": "Sensory & Attention",
+    "is_llm_driven": false,
+    "current_difficulty_band": 5.0,
+    "min_difficulty": 1.0,
+    "max_difficulty": 10.0
+  },
+  {
+    "game_type_id": "clear_air",
+    "display_name": "Clear Air",
+    "category": "Sensory & Attention",
+    "is_llm_driven": false,
+    "current_difficulty_band": 5.0,
+    "min_difficulty": 1.0,
+    "max_difficulty": 10.0
+  },
+  {
+    "game_type_id": "extract_facts",
+    "display_name": "Extract the Facts",
+    "category": "Logic & Calibration",
+    "is_llm_driven": true,
+    "current_difficulty_band": 5.0,
+    "min_difficulty": 1.0,
+    "max_difficulty": 10.0
+  },
+  {
+    "game_type_id": "gut_check",
+    "display_name": "Gut Check",
+    "category": "Logic & Calibration",
+    "is_llm_driven": true,
+    "current_difficulty_band": 5.0,
+    "min_difficulty": 1.0,
+    "max_difficulty": 10.0
+  },
+  {
+    "game_type_id": "read_designs",
+    "display_name": "Read Designs",
+    "category": "Sensory & Attention",
+    "is_llm_driven": false,
+    "current_difficulty_band": 5.0,
+    "min_difficulty": 1.0,
+    "max_difficulty": 10.0
+  },
+  {
+    "game_type_id": "mental_reflex",
+    "display_name": "Mental Reflex",
+    "category": "Sensory & Attention",
+    "is_llm_driven": false,
+    "current_difficulty_band": 5.0,
+    "min_difficulty": 1.0,
+    "max_difficulty": 10.0
+  }
+]
