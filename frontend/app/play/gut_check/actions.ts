@@ -4,28 +4,9 @@ import { GutCheckGame, generate } from "@/utils/generate_game";
 import { auth } from "@clerk/nextjs/server";
 import dotenv from "dotenv";
 import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
-import { getCurrentDayRange } from "@/utils/getCurrentDayRange";
 import { prisma } from "@/utils/prismaInit";
+import { checkHasPlayedToday } from "@/utils/checkHasPlayedToday";
 dotenv.config();
-
-const checkHasPlayedToday = async (targetId: string): Promise<boolean> => {
-  const { start, end } = getCurrentDayRange();
-  const dbSafeUuid = safeFormatToUuid(targetId);
-  console.log(start);
-  console.log(end);
-  const existingRecord = await prisma.user_stats.findFirst({
-    where: {
-      user_id: dbSafeUuid,
-      game_type_id: "GUT_CHECK",
-      created_at: {
-        gte: start,
-        lte: end,
-      },
-    },
-  });
-  console.log(existingRecord);
-  return !!existingRecord;
-};
 
 const fetchServerGameData = async (
   deviceId: string,
@@ -39,7 +20,7 @@ const fetchServerGameData = async (
     const targetIdentifier = userId || deviceId;
 
     if (targetIdentifier) {
-      const played = await checkHasPlayedToday(targetIdentifier);
+      const played = await checkHasPlayedToday(targetIdentifier, "GUT_CHECK");
       if (played) {
         return { success: false, data: null, error: "ALREADY_PLAYED" };
       }
@@ -62,7 +43,7 @@ const saveUserGameStats = async (
     const targetIdentifier = userId || deviceId;
 
     if (targetIdentifier) {
-      const played = await checkHasPlayedToday(targetIdentifier);
+      const played = await checkHasPlayedToday(targetIdentifier, "GUT_CHECK");
       if (played) {
         return { success: false, error: "ALREADY_PLAYED" };
       }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { fetchServerGameData, saveUserGameStats } from "./actions";
 import { GutCheckGame } from "@/utils/generate_game";
