@@ -7,6 +7,7 @@ datasource db {
   provider = "postgresql"
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model daily_funnel {
   id           String    @id @db.Uuid
   user_id      String    @db.Uuid
@@ -27,6 +28,7 @@ model kalari_games {
   @@unique([mode, scheduled_for], map: "unique_daily_game")
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model user_stats {
   id               String    @id @db.Uuid
   user_id          String    @db.Uuid
