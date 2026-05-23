@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from "fs";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import yargs from "yargs";
@@ -7,7 +7,8 @@ import dotenv from "dotenv";
 
 dotenv.config({ path: ".env.local" });
 
-const { SUPABASE_URL, SUPABASE_KEY, GOOGLE_GENERATIVE_AI_API_KEY } = process.env;
+const { SUPABASE_URL, SUPABASE_KEY, GOOGLE_GENERATIVE_AI_API_KEY } =
+  process.env;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ==========================================
@@ -20,7 +21,7 @@ const GutCheckSchema = z.object({
       z.object({
         anchor_statement: z.string(),
         is_anchor_true: z.preprocess((val) => {
-          if (typeof val === 'string') return val.toLowerCase() === 'true';
+          if (typeof val === "string") return val.toLowerCase() === "true";
           return Boolean(val);
         }, z.boolean()),
         the_real_question: z.string(),
@@ -84,7 +85,9 @@ function hslToHex(h, s, l) {
   const f = (n) => {
     const k = (n + h / 30) % 12;
     const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(255 * color).toString(16).padStart(2, "0");
+    return Math.round(255 * color)
+      .toString(16)
+      .padStart(2, "0");
   };
   return `#${f(0)}${f(8)}${f(4)}`;
 }
@@ -100,20 +103,20 @@ function generateSteadyGazeParams(today) {
     screen_color: hslToHex(baseHue, 75, 50),
     dot_color: hslToHex(oppositeHue, 75, 50),
     shimmer_frequency: parseFloat((2.0 + seed * 4.0).toFixed(1)),
-    spawn_pattern_seed: parseFloat(seed.toFixed(4))
+    spawn_pattern_seed: parseFloat(seed.toFixed(4)),
   };
 }
 
 function generateClearAirParams(today) {
   const seed = getDailySeed(today + "clear_air");
   const variantId = Math.floor(seed * 1000);
-  
+
   return {
     theme_title: `Dissolving Distractions Pattern v${variantId}`,
     bubble_speed: parseFloat((1.2 + seed * 2.3).toFixed(2)),
     initial_distraction_ratio: parseFloat((0.3 + seed * 0.2).toFixed(2)),
     progression_intensity_multiplier: parseFloat((1.5 + seed * 1.5).toFixed(2)),
-    max_bubble_density_cap: Math.floor(25 + seed * 15)
+    max_bubble_density_cap: Math.floor(25 + seed * 15),
   };
 }
 
@@ -127,7 +130,7 @@ export async function generate(customMode = null, forceRefresh = false) {
   // Chennai Local Date
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60000;
-  const today = new Date(now - offset).toISOString().split('T')[0];
+  const today = new Date(now - offset).toISOString().split("T")[0];
 
   try {
     // 2. RESUBMIT LOCK: Checks cache lock so games stay stable for 24 hours
@@ -141,11 +144,20 @@ export async function generate(customMode = null, forceRefresh = false) {
 
       if (existing && existing.content) {
         const hasGut = mode === "gut_check" && existing.content.questions;
-        const hasFacts = mode === "extract_facts" && existing.content.mcq_questions;
+        const hasFacts =
+          mode === "extract_facts" && existing.content.mcq_questions;
         const hasGaze = mode === "steady_gaze" && existing.content.screen_color;
-        const hasAir = mode === "clear_air" && existing.content.progression_intensity_multiplier;
+        const hasAir =
+          mode === "clear_air" &&
+          existing.content.progression_intensity_multiplier;
 
-        if (hasGaze || hasAir || hasFacts || (hasGut && existing.content.questions[0].hasOwnProperty('the_real_question'))) {
+        if (
+          hasGaze ||
+          hasAir ||
+          hasFacts ||
+          (hasGut &&
+            existing.content.questions[0].hasOwnProperty("the_real_question"))
+        ) {
           const out = JSON.stringify(existing.content, null, 2);
           process.stdout.write(out);
           return existing.content;
@@ -159,11 +171,9 @@ export async function generate(customMode = null, forceRefresh = false) {
     if (mode === "steady_gaze") {
       const rawParams = generateSteadyGazeParams(today);
       validated = SteadyGazeSchema.parse(rawParams);
-
     } else if (mode === "clear_air") {
       const rawParams = generateClearAirParams(today);
       validated = ClearAirSchema.parse(rawParams);
-
     } else {
       // LLM GENERATION PIPELINE LAYER
       let prompt = "";
@@ -228,9 +238,9 @@ export async function generate(customMode = null, forceRefresh = false) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { 
+          generationConfig: {
             responseMimeType: "application/json",
-            temperature: 1.0 
+            temperature: 1.0,
           },
         }),
       });
@@ -240,7 +250,10 @@ export async function generate(customMode = null, forceRefresh = false) {
       if (!rawText) throw new Error("API returned empty candidates.");
 
       const parsed = JSON.parse(rawText);
-      validated = mode === "gut_check" ? GutCheckSchema.parse(parsed) : ExtractFactsSchema.parse(parsed);
+      validated =
+        mode === "gut_check"
+          ? GutCheckSchema.parse(parsed)
+          : ExtractFactsSchema.parse(parsed);
     }
 
     // ==========================================
@@ -249,12 +262,13 @@ export async function generate(customMode = null, forceRefresh = false) {
     let dbTopic = mode;
     if (mode === "gut_check") dbTopic = validated.industry_theme;
     if (mode === "extract_facts") dbTopic = validated.topic;
-    if (mode === "steady_gaze" || mode === "clear_air") dbTopic = validated.theme_title;
+    if (mode === "steady_gaze" || mode === "clear_air")
+      dbTopic = validated.theme_title;
 
     await supabase.from("kalari_games").upsert(
       {
         mode,
-        topic: dbTopic, 
+        topic: dbTopic,
         content: validated,
         scheduled_for: today,
       },
@@ -276,6 +290,10 @@ export async function generate(customMode = null, forceRefresh = false) {
 }
 
 // FIX: Default execution changed to false to prevent accidental infinite generation cycles!
-if (process.argv[1] && (process.argv[1].endsWith("generate_game.js") || process.argv[1].endsWith("generate_game.ts"))) {
-  generate(null, false); 
+if (
+  process.argv[1] &&
+  (process.argv[1].endsWith("generate_game.js") ||
+    process.argv[1].endsWith("generate_game.ts"))
+) {
+  generate(null, false);
 }
