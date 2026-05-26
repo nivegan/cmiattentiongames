@@ -4,8 +4,9 @@ import { useAuth, SignUpButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchHistory, HistoryResult } from "./actions";
+import type { GameMode } from "@/utils/generate_game";
 
-const GAME_LABELS: Record<string, string> = {
+const GAME_LABELS: Partial<Record<GameMode, string>> = {
   GUT_CHECK: "Gut Check",
   EXTRACT_THE_FACTS: "Extract Facts",
   STEADY_GAZE: "Steady Gaze",
@@ -98,7 +99,7 @@ const HistoryPage = () => {
             >
               <div>
                 <p className="text-[#232323] font-bold uppercase tracking-wider text-sm">
-                  {GAME_LABELS[entry.game_type_id ?? ""] ??
+                  {(entry.game_type_id && GAME_LABELS[entry.game_type_id]) ??
                     entry.game_type_id ??
                     "Unknown"}
                 </p>

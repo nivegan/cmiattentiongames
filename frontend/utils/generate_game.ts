@@ -15,10 +15,12 @@ if (!GOOGLE_GENERATIVE_AI_API_KEY || !DATABASE_URL) {
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type GameMode =
-  | "gut_check"
-  | "extract_facts"
-  | "steady_gaze"
-  | "clear_air";
+  | "GUT_CHECK"
+  | "EXTRACT_THE_FACTS"
+  | "STEADY_GAZE"
+  | "CLEAR_THE_AIR"
+  | "READ_BETWEEN_DESIGNS"
+  | "MENTAL_REFLEX";
 export type GutCheckGame = z.infer<typeof GutCheckSchema>;
 export type ExtractFactsGame = z.infer<typeof ExtractFactsSchema>;
 export type SteadyGazeGame = z.infer<typeof SteadyGazeSchema>;
@@ -161,7 +163,7 @@ const generate = async (
   };
   const mode: GameMode = (customMode ||
     argv.mode ||
-    "extract_facts") as GameMode;
+    "EXTRACT_THE_FACTS") as GameMode;
 
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60000;
@@ -190,16 +192,16 @@ const generate = async (
           progression_intensity_multiplier?: number;
         };
 
-        const hasFacts = mode === "extract_facts" && content.mcq_questions;
-        const hasGaze = mode === "steady_gaze" && content.screen_color;
+        const hasFacts = mode === "EXTRACT_THE_FACTS" && content.mcq_questions;
+        const hasGaze = mode === "STEADY_GAZE" && content.screen_color;
         const hasAir =
-          mode === "clear_air" && content.progression_intensity_multiplier;
+          mode === "CLEAR_THE_AIR" && content.progression_intensity_multiplier;
 
         const isStuckMushroom = content?.industry_theme
           ?.toLowerCase()
           .includes("mycology");
         const hasGut =
-          mode === "gut_check" &&
+          mode === "GUT_CHECK" &&
           content?.questions?.[0]?.hasOwnProperty("the_real_question") &&
           !isStuckMushroom;
 
@@ -213,15 +215,15 @@ const generate = async (
 
     let validated: GameResult;
 
-    if (mode === "steady_gaze") {
+    if (mode === "STEADY_GAZE") {
       const rawParams = generateSteadyGazeParams(today);
       validated = SteadyGazeSchema.parse(rawParams);
-    } else if (mode === "clear_air") {
+    } else if (mode === "CLEAR_THE_AIR") {
       const rawParams = generateClearAirParams(today);
       validated = ClearAirSchema.parse(rawParams);
     } else {
       let prompt = "";
-      if (mode === "gut_check") {
+      if (mode === "GUT_CHECK") {
         prompt = `Return ONLY a raw JSON object for 'Gut Check'.
 Date: ${today}.
 Dynamic Entropy Value: ${Date.now()}-${Math.random()}.
@@ -299,7 +301,7 @@ Expected JSON Structure:
 
       const parsed: unknown = JSON.parse(rawText);
       validated =
-        mode === "gut_check"
+        mode === "GUT_CHECK"
           ? GutCheckSchema.parse(parsed)
           : ExtractFactsSchema.parse(parsed);
     }
@@ -308,11 +310,11 @@ Expected JSON Structure:
     // 4. UNIFIED DATABASE SYNC UPSERT LAYER
     // ==========================================
     let dbTopic = mode as string;
-    if (mode === "gut_check")
+    if (mode === "GUT_CHECK")
       dbTopic = (validated as GutCheckGame).industry_theme;
-    if (mode === "extract_facts")
+    if (mode === "EXTRACT_THE_FACTS")
       dbTopic = (validated as ExtractFactsGame).topic;
-    if (mode === "steady_gaze" || mode === "clear_air") {
+    if (mode === "STEADY_GAZE" || mode === "CLEAR_THE_AIR") {
       dbTopic = (validated as SteadyGazeGame | ClearAirGame).theme_title;
     }
 

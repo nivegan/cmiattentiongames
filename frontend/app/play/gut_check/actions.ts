@@ -26,7 +26,7 @@ const fetchServerGameData = async (
       }
     }
 
-    const result = await generate("gut_check");
+    const result = await generate("GUT_CHECK");
     return { success: true, data: result as GutCheckGame };
   } catch (error) {
     console.error("Error generating gut check game metadata payload:", error);

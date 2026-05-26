@@ -1,10 +1,11 @@
 import { getCurrentDayRange } from "./getCurrentDayRange";
 import { prisma } from "./prismaInit";
 import { safeFormatToUuid } from "./safeFormatToUuid";
+import type { GameMode } from "./generate_game";
 
 const checkHasPlayedToday = async (
   targetId: string,
-  game: "GUT_CHECK" | "EXTRACT_THE_FACTS",
+  game: GameMode,
 ): Promise<boolean> => {
   const { start, end } = getCurrentDayRange();
   const dbSafeUuid = safeFormatToUuid(targetId);

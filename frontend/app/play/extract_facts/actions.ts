@@ -29,7 +29,7 @@ const fetchServerGameData = async (
       }
     }
 
-    const result = await generate("extract_facts");
+    const result = await generate("EXTRACT_THE_FACTS");
     return { success: true, data: result as ExtractFactsGame };
   } catch (error) {
     console.error("Error generating extract facts game data payload:", error);

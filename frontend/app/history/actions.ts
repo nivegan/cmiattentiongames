@@ -3,10 +3,11 @@
 import { auth } from "@clerk/nextjs/server";
 import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
 import { prisma } from "@/utils/prismaInit";
+import type { GameMode } from "@/utils/generate_game";
 
 export interface HistoryEntry {
   id: string;
-  game_type_id: string | null;
+  game_type_id: GameMode | null;
   score: number;
   is_success: boolean;
   created_at: string;
