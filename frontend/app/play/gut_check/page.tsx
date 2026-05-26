@@ -139,8 +139,10 @@ const GutCheckPage = () => {
       }
       accumulatedAccuracy += calculatedAcc;
 
-      const distance = Math.abs(confVal - calculatedAcc);
-      const roundCalibrationScore = Math.max(0, 100 - distance);
+      const calibration = Math.max(0, 100 - Math.abs(calculatedAcc - confVal));
+      const roundCalibrationScore = Math.round(
+        calculatedAcc * 0.5 + calibration * 0.5,
+      );
 
       itemsList.push({
         roundNum: idx + 1,
@@ -156,10 +158,8 @@ const GutCheckPage = () => {
 
     const averageConfidence = Math.round(accumulatedConfidence / totalRounds);
     const averageAccuracy = Math.round(accumulatedAccuracy / totalRounds);
-    const finalVarianceDelta = Math.abs(averageConfidence - averageAccuracy);
-    const finalComputedOverallScore = Math.max(
-      0,
-      Math.min(100, 100 - finalVarianceDelta),
+    const finalComputedOverallScore = Math.round(
+      itemsList.reduce((sum, item) => sum + item.score, 0) / totalRounds,
     );
 
     return {
