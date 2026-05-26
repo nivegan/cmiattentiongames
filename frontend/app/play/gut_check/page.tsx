@@ -276,7 +276,7 @@ const GutCheckPage = () => {
         >
           {/* WELCOME PHASE */}
           {phase === "WELCOME" && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 animate-in fade-in duration-200">
               <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
                 <p className="text-xs leading-relaxed text-[#232323] font-medium mb-5">
                   Train your metacognition – how well do you know what you know?
@@ -319,7 +319,7 @@ const GutCheckPage = () => {
 
           {/* ANCHOR PHASE */}
           {phase === "ANCHOR" && activeQuestion && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 animate-in fade-in duration-200">
               <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
                 <p className="text-xs leading-relaxed text-[#232323] font-medium">
                   {activeQuestion.anchor_statement}
@@ -350,7 +350,7 @@ const GutCheckPage = () => {
 
           {/* REAL QUESTION PHASE */}
           {phase === "REAL_QUESTION" && activeQuestion && (
-            <div className="space-y-5 animate-fadeIn">
+            <div className="space-y-5 animate-in fade-in duration-200">
               <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
                 <p className="text-xs leading-relaxed text-[#232323] font-medium">
                   {activeQuestion.the_real_question}
@@ -381,7 +381,7 @@ const GutCheckPage = () => {
 
           {/* CONFIDENCE CHECK PHASE */}
           {phase === "CONFIDENCE_CHECK" && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 animate-in fade-in duration-200">
               <div className="text-center">
                 <h2 className="text-[11px] font-black tracking-widest text-[#8B2626] uppercase">
                   CONFIDENCE CHECK
@@ -440,7 +440,7 @@ const GutCheckPage = () => {
 
           {/* METRICS DASHBOARD PHASE */}
           {phase === "METRICS" && (
-            <div className="space-y-5 animate-fadeIn">
+            <div className="space-y-5 animate-in fade-in duration-200">
               <div className="text-center">
                 <h2 className="text-[11px] font-black tracking-widest text-[#8B2626] uppercase">
                   CALIBRATION METRICS
@@ -535,7 +535,7 @@ const GutCheckPage = () => {
 
           {/* ITEMISED RESULTS PHASE */}
           {phase === "RESULTS" && (
-            <div className="space-y-5 animate-fadeIn">
+            <div className="space-y-5 animate-in fade-in duration-200">
               <div className="text-center">
                 <h2 className="text-[11px] font-black tracking-widest text-[#8B2626] uppercase">
                   CALIBRATION RESULTS
