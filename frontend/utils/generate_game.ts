@@ -97,9 +97,14 @@ const ClearAirSchema = z.object({
 
 // ── Math Core & Algorithmic Helper Functions ───────────────────────────────
 
+// Converts a date string into a stable [0, 1) float so that STEADY_GAZE and
+// CLEAR_THE_AIR always produce the same parameters for a given calendar day
+// without calling Gemini. The sin() at the end spreads the integer hash into
+// a well-distributed fractional value.
 function getDailySeed(dateStr: string): number {
   let hash = 0;
   for (let i = 0; i < dateStr.length; i++) {
+    // djb2-style: shift-and-add hash that avalanches single-char changes
     hash = dateStr.charCodeAt(i) + ((hash << 5) - hash);
   }
   return Math.abs(Math.sin(hash)) % 1;
@@ -119,8 +124,12 @@ function hslToHex(h: number, s: number, l: number): string {
 }
 
 function generateSteadyGazeParams(today: string) {
+  // The "steady_gaze" suffix differentiates this seed from the clear_air one so
+  // both games get different colours on the same day.
   const seed = getDailySeed(today + "steady_gaze");
   const baseHue = Math.floor(seed * 360);
+  // Complementary colour (opposite on the colour wheel) ensures strong contrast
+  // between background and dot without manual colour curation.
   const oppositeHue = (baseHue + 180) % 360;
 
   return {
@@ -171,7 +180,10 @@ const generate = async (
   const todayDate = new Date(`${today}T00:00:00.000Z`);
 
   try {
-    // NATURAL 24-HOUR DAILY LOCK CHECK
+    // Check kalari_games for a cached row before calling Gemini.
+    // We validate the cached content structurally rather than trusting it
+    // blindly — previous runs may have stored malformed data (e.g. the
+    // mycology bug where Gemini ignored the anti-repetition filter).
     if (!forceRefresh) {
       const existing = await prisma.kalari_games.findUnique({
         where: {
@@ -197,6 +209,9 @@ const generate = async (
         const hasAir =
           mode === "CLEAR_THE_AIR" && content.progression_intensity_multiplier;
 
+        // Reject any cached GUT_CHECK that is about mycology — Gemini repeatedly
+        // generated mushroom-themed content early on despite the anti-repetition
+        // filter, so those rows were manually invalidated but left in the DB.
         const isStuckMushroom = content?.industry_theme
           ?.toLowerCase()
           .includes("mycology");
@@ -206,8 +221,6 @@ const generate = async (
           !isStuckMushroom;
 
         if (hasGaze || hasAir || hasFacts || hasGut) {
-          // const finalOutput = JSON.stringify(content, null, 2);
-          // process.stdout.write(finalOutput);
           return content as GameResult;
         }
       }
@@ -306,9 +319,9 @@ Expected JSON Structure:
           : ExtractFactsSchema.parse(parsed);
     }
 
-    // ==========================================
-    // 4. UNIFIED DATABASE SYNC UPSERT LAYER
-    // ==========================================
+    // Upsert rather than insert so that forceRefresh runs (or a race between
+    // two simultaneous cold requests) don't create duplicate rows for the same
+    // (mode, scheduled_for) pair.
     let dbTopic = mode as string;
     if (mode === "GUT_CHECK")
       dbTopic = (validated as GutCheckGame).industry_theme;

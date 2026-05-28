@@ -68,9 +68,11 @@ model user_stats {
 }
 
 enum EventType {
-  LOGIN
+  SESSION_START
+  GAME_START
   GAME_CLICK
   GAME_COMPLETE
+  SESSION_END
 }
 
 enum GameStatus {

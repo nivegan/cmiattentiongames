@@ -26,6 +26,10 @@ const ExtractFactsPage = () => {
 
   const contentScrollRef = useRef<HTMLDivElement>(null);
 
+  // Splits paragraph_a into individual sentences for the takeaway bullet list.
+  // paragraph_a is treated as the "factual" narrative; paragraph_b is the
+  // spin/speculative version — only A's sentences are shown as verified facts.
+  // The >20 char filter drops short fragments that appear after splitting on "!?".
   const verifiedFacts = useMemo(() => {
     if (!gameData || !gameData.paragraph_a) return [];
 
@@ -77,6 +81,9 @@ const ExtractFactsPage = () => {
     return quizSelections[idx] === q.correct_answer_index ? score + 1 : score;
   }, 0);
 
+  // Interim scoring formula: each correct MCQ is worth 30 points, plus a raw
+  // bonus equal to the takeaway word count. The full formula (with Takeaway
+  // Depth tiers and Loaded Words penalty) is pending design confirmation.
   const finalComputedScore = useMemo(() => {
     return correctCount * 30 + takeawayWordCount;
   }, [correctCount, takeawayWordCount]);
@@ -264,15 +271,13 @@ const ExtractFactsPage = () => {
                       }`}
                     >
                       <div
-                        className={`w-4.5 h-4.5 border shrink-0 mt-0.5 flex items-center justify-center rounded-sm ${
+                        className={`w-5 h-5 border shrink-0 mt-0.5 flex items-center justify-center rounded-sm text-[10px] font-black ${
                           isSelected
-                            ? "border-[#8B2626] bg-[#8B2626]"
-                            : "border-[#7C6560] bg-white"
+                            ? "border-[#8B2626] bg-[#8B2626] text-white"
+                            : "border-[#7C6560] bg-white text-[#7C6560]"
                         }`}
                       >
-                        {isSelected && (
-                          <div className="w-1.5 h-1.5 bg-white rounded-xs" />
-                        )}
+                        {String.fromCharCode(65 + optIdx)}
                       </div>
                       <span className="text-[13px] leading-tight text-[#5C4540]">
                         {option}
@@ -408,10 +413,15 @@ const ExtractFactsPage = () => {
                               {isUserCorrect ? "✓ CORRECT" : "✗ INCORRECT"}
                             </span>
                           </div>
-                          <p className="text-[#7C6560] leading-normal text-[11px]">
-                            Expected Option Index: {q.correct_answer_index}.
-                            Provided Index: {quizSelections[idx] ?? "None"}
-                          </p>
+                          {!isUserCorrect && (
+                            <p className="text-[#7C6560] leading-normal text-[11px]">
+                              Correct:{" "}
+                              <span className="font-bold text-[#22C55E]">
+                                {String.fromCharCode(65 + q.correct_answer_index)}.{" "}
+                                {q.options[q.correct_answer_index]}
+                              </span>
+                            </p>
+                          )}
                         </div>
                       );
                     })}

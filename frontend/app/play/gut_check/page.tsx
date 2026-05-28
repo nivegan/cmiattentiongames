@@ -61,6 +61,8 @@ const GutCheckPage = () => {
     async function loadGame() {
       setIsLoading(true);
 
+      // Persist a stable anonymous identifier in localStorage so the daily lock
+      // applies consistently across page reloads for unauthenticated users.
       let localDevice = localStorage.getItem("meta_mind_global_device_id");
       if (!localDevice) {
         localDevice = window.crypto.randomUUID();
@@ -85,6 +87,8 @@ const GutCheckPage = () => {
     loadGame();
   }, [router]);
 
+  // Scroll back to the top whenever the phase or round changes so the user
+  // never lands mid-page on a new question.
   useEffect(() => {
     if (containerScrollRef.current) {
       containerScrollRef.current.scrollTop = 0;
@@ -98,6 +102,9 @@ const GutCheckPage = () => {
   const totalRounds = gameData?.questions?.length ?? 3;
   const activeQuestion = gameData?.questions?.[currentRoundIndex];
 
+  // Merges partial fields into the current round's response record. Called
+  // separately for anchorGuess, realGuess, and confidence across different
+  // phases so each update doesn't overwrite the others.
   const saveCurrentRoundSlice = (updatedFields: Partial<RoundResponse>) => {
     setRoundResponses((prev) => ({
       ...prev,
@@ -105,6 +112,11 @@ const GutCheckPage = () => {
     }));
   };
 
+  // Scoring formula (runs only when roundResponses changes, i.e. after each round):
+  //   Accuracy%   = Max(0, Min(100, round((1 - |true - guess| / true) * 100)))
+  //   Calibration = Max(0, 100 - |Accuracy% - Confidence%|)  ← reward alignment
+  //   Round score = Accuracy% * 0.5 + Calibration * 0.5
+  //   Overall     = average of all round scores
   const calculatedPerformanceMetrics = useMemo<PerformanceMetrics>(() => {
     if (!gameData || !gameData.questions) {
       return {
@@ -127,6 +139,8 @@ const GutCheckPage = () => {
 
       accumulatedConfidence += confVal;
 
+      // Exact-match guard avoids division-by-zero when trueVal === 0 or an
+      // exact hit would round to 99 due to floating-point error.
       let calculatedAcc = 0;
       if (trueVal === guessVal) {
         calculatedAcc = 100;
@@ -139,6 +153,8 @@ const GutCheckPage = () => {
       }
       accumulatedAccuracy += calculatedAcc;
 
+      // Calibration score: 100 when confidence perfectly matches accuracy,
+      // falling linearly to 0 when they are 100 points apart.
       const calibration = Math.max(0, 100 - Math.abs(calculatedAcc - confVal));
       const roundCalibrationScore = Math.round(
         calculatedAcc * 0.5 + calibration * 0.5,
@@ -513,7 +529,15 @@ const GutCheckPage = () => {
                 </div>
                 <div className="flex justify-between items-center border border-[#232323]/20 p-2.5 text-[10px] font-black tracking-wider">
                   <span>CALIBRATION QUALITY:</span>
-                  <span className="text-[#8B2626]">✓ GOOD</span>
+                  <span className="text-[#8B2626]">
+                    {calculatedPerformanceMetrics.overallScore >= 75
+                      ? "✓ EXCELLENT"
+                      : calculatedPerformanceMetrics.overallScore >= 50
+                        ? "✓ GOOD"
+                        : calculatedPerformanceMetrics.overallScore >= 25
+                          ? "~ FAIR"
+                          : "✗ POOR"}
+                  </span>
                 </div>
               </div>
               <button

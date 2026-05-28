@@ -28,19 +28,24 @@ function toISTDateKey(date: Date): string {
   }).format(date);
 }
 
+// Counts consecutive IST calendar days the user played, walking backward from
+// the most recent play. The streak stays alive if the user played either today
+// or yesterday (so opening the app before playing today doesn't break it).
 function computeStreak(dates: Date[]): number {
   if (dates.length === 0) return 0;
 
   const playedDays = new Set(dates.map(toISTDateKey));
   const todayKey = toISTDateKey(new Date());
+  // 86_400_000 ms = exactly 24 hours; cheap approximation for "yesterday" that
+  // works here because we're comparing IST date strings, not UTC timestamps.
   const yesterdayKey = toISTDateKey(new Date(Date.now() - 86_400_000));
 
-  // Streak is still alive if today or yesterday was played
   const startKey = playedDays.has(todayKey) ? todayKey : yesterdayKey;
   if (!playedDays.has(startKey)) return 0;
 
   let streak = 0;
-  // Walk back day-by-day from startKey
+  // Noon IST avoids any ambiguity around DST or day-boundary edge cases when
+  // subtracting 24 h to step back one day.
   let cursor = new Date(`${startKey}T12:00:00+05:30`);
   while (playedDays.has(toISTDateKey(cursor))) {
     streak++;

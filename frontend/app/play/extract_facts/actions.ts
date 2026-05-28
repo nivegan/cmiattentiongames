@@ -8,6 +8,8 @@ import { prisma } from "@/utils/prismaInit";
 import { checkHasPlayedToday } from "@/utils/checkHasPlayedToday";
 dotenv.config();
 
+// First of two daily-lock checkpoints — prevents serving game content to a user
+// who already completed this mode today. Mirrors the pattern in gut_check/actions.ts.
 const fetchServerGameData = async (
   deviceId: string,
 ): Promise<{

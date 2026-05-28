@@ -1,7 +1,10 @@
+// Returns the UTC timestamps that bracket the current IST calendar day.
+// All "has played today?" queries use this range so the day boundary is always
+// IST midnight regardless of where the server is running.
 const getCurrentDayRange = () => {
   const now = new Date();
 
-  // Get current date in IST
+  // en-CA gives YYYY-MM-DD parts which are easy to destructure
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata",
     year: "numeric",
@@ -9,13 +12,14 @@ const getCurrentDayRange = () => {
     day: "2-digit",
   });
 
+  // formatToParts returns [{type,value}, literal, {type,value}, ...]; we skip
+  // the separator literals (odd-indexed elements) with the comma elisions below.
   const [{ value: year }, , { value: month }, , { value: day }] =
     formatter.formatToParts(now);
 
-  // IST midnight converted to UTC
+  // Constructing with an explicit +05:30 offset lets JavaScript convert to UTC
+  // automatically rather than us having to subtract 5.5 hours manually.
   const start = new Date(`${year}-${month}-${day}T00:00:00+05:30`);
-
-  // IST end of day converted to UTC
   const end = new Date(`${year}-${month}-${day}T23:59:59.999+05:30`);
 
   return { start, end };
