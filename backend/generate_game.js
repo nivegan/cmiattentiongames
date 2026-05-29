@@ -185,6 +185,7 @@ Dynamic Entropy Value: ${Date.now()}-${Math.random()}.
 THEME VARIETY INSTRUCTIONS:
 Select an entirely random, creative, unique industry domain, scientific discovery sector, marine biology metric, astrophysics trend, historical era, or micro-economic dataset.
 CRITICAL ANTI-REPETITION FILTER: Do NOT focus on 'Mycology', 'Mushroom networks', 'Burj Khalifa', architectural building heights, or any previously generated configurations.
+Make sure the questions are not too niche or obscure, but also not too common or easily guessable. Aim for a balanced challenge that rewards genuine knowledge and reasoning.
 
 MANDATORY QUESTION STYLE:
 Every single question segment must consist of two steps:
