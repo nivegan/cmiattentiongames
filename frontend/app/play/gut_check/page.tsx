@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { fetchServerGameData, saveUserGameStats } from "./actions";
 import { GutCheckGame } from "@/utils/generate_game";
 import { useRouter } from "next/navigation";
+import { useDeviceId } from "@/hooks/useDeviceId";
+import { GameShell } from "@/components/GameShell";
+import { GameLoadingScreen } from "@/components/GameLoadingScreen";
+import { GameErrorScreen } from "@/components/GameErrorScreen";
 
 type AppPhase =
   | "WELCOME"
@@ -44,7 +48,7 @@ const GutCheckPage = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmittingDb, setIsSubmittingDb] = useState<boolean>(false);
 
-  const [deviceId, setDeviceId] = useState<string>("");
+  const deviceIdRef = useDeviceId();
 
   const [phase, setPhase] = useState<AppPhase>("WELCOME");
   const [currentRoundIndex, setCurrentRoundIndex] = useState<number>(0);
@@ -61,16 +65,7 @@ const GutCheckPage = () => {
     async function loadGame() {
       setIsLoading(true);
 
-      // Persist a stable anonymous identifier in localStorage so the daily lock
-      // applies consistently across page reloads for unauthenticated users.
-      let localDevice = localStorage.getItem("meta_mind_global_device_id");
-      if (!localDevice) {
-        localDevice = window.crypto.randomUUID();
-        localStorage.setItem("meta_mind_global_device_id", localDevice);
-      }
-      setDeviceId(localDevice);
-
-      const response = await fetchServerGameData(localDevice);
+      const response = await fetchServerGameData(deviceIdRef.current);
 
       if (!response.success) {
         if (response.error === "ALREADY_PLAYED") {
@@ -85,7 +80,7 @@ const GutCheckPage = () => {
       setIsLoading(false);
     }
     loadGame();
-  }, [router]);
+  }, [deviceIdRef, router]);
 
   // Scroll back to the top whenever the phase or round changes so the user
   // never lands mid-page on a new question.
@@ -190,7 +185,7 @@ const GutCheckPage = () => {
     setIsSubmittingDb(true);
     const connectionResult = await saveUserGameStats(
       calculatedPerformanceMetrics.overallScore,
-      deviceId,
+      deviceIdRef.current,
     );
     setIsSubmittingDb(false);
 
@@ -205,390 +200,254 @@ const GutCheckPage = () => {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#FAF6F0] text-[#232323] font-mono flex items-center justify-center p-4">
-        <div className="text-center space-y-3">
-          <div className="w-9 h-9 border-2 border-[#8B2626] border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-[#8B2626] font-black tracking-widest text-xs uppercase animate-pulse">
-            LOADING...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!gameData || !gameData.questions || gameData.questions.length === 0) {
-    return (
-      <div className="min-h-screen bg-[#FAF6F0] text-[#232323] font-mono flex items-center justify-center p-4">
-        <div className="bg-[#FAF6F0] border-2 border-[#8B2626] p-6 max-w-sm text-center shadow-[4px_4px_0px_#8B2626]">
-          <p className="text-xs font-black text-[#8B2626] uppercase mb-2">
-            SYSTEM ERROR
-          </p>
-          <p className="text-xs leading-relaxed text-[#232323]/80">
-            Telemetry metrics payload failed verification configurations.
-          </p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-4 text-xs font-black underline text-[#8B2626] uppercase"
-          >
-            RETRY
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return <GameLoadingScreen />;
+  if (!gameData || !gameData.questions || gameData.questions.length === 0)
+    return <GameErrorScreen />;
 
   return (
-    <div className="min-h-screen bg-[#FAF6F0] text-[#232323] font-mono flex items-center justify-center p-0 sm:p-4 relative antialiased select-none">
-      <div
-        className="absolute inset-0 pointer-events-none opacity-[0.06]"
-        style={{
-          backgroundImage: "linear-gradient(#232323 1px, transparent 1px)",
-          backgroundSize: "100% 20px",
-        }}
-      />
-
-      <div className="w-full max-w-md h-screen sm:h-170 bg-[#FAF6F0] sm:border-2 border-[#232323] flex flex-col overflow-hidden relative shadow-[8px_8px_0px_rgba(35,35,35,0.15)]">
-        {/* Corner Brackets */}
-        <div className="absolute top-3 left-3 w-4 h-4 border-t-2 border-l-2 border-[#8B2626]/30 pointer-events-none" />
-        <div className="absolute top-3 right-3 w-4 h-4 border-t-2 border-r-2 border-[#8B2626]/30 pointer-events-none" />
-        <div className="absolute bottom-3 left-3 w-4 h-4 border-b-2 border-l-2 border-[#8B2626]/30 pointer-events-none" />
-        <div className="absolute bottom-3 right-3 w-4 h-4 border-b-2 border-r-2 border-[#8B2626]/30 pointer-events-none" />
-
-        <header className="px-6 pt-5 pb-3 bg-[#FAF6F0] z-20 shrink-0">
-          <div className="flex items-center justify-between relative">
-            <button
-              onClick={handleBackToHome}
-              className="w-9 h-9 flex items-center justify-center bg-[#FAF6F0] border border-[#232323] shadow-[2px_2px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
-            >
-              <ArrowLeft className="w-4 h-4" strokeWidth={3} />
-            </button>
-            <h1 className="text-xs font-black tracking-[0.25em] text-[#8B2626] uppercase">
-              GUT CHECK
-            </h1>
-            <div>
-              {phase !== "WELCOME" &&
-              phase !== "METRICS" &&
-              phase !== "RESULTS" ? (
-                <div className="bg-[#232323] text-[#00FF33] font-bold text-[10px] px-2 py-1 border border-[#232323] tracking-widest">
-                  ROUND {currentRoundIndex + 1}/{totalRounds}
-                </div>
-              ) : (
-                <div className="w-8 h-8 flex items-center justify-center opacity-40">
-                  <div
-                    className="w-6 h-6 rounded-full border-2 border-dashed border-[#8B2626] animate-spin"
-                    style={{ animationDuration: "8s" }}
-                  />
-                </div>
-              )}
-            </div>
+    <GameShell
+      title="GUT CHECK"
+      onBack={handleBackToHome}
+      badge={
+        phase !== "WELCOME" && phase !== "METRICS" && phase !== "RESULTS" ? (
+          <div className="bg-[#232323] text-[#00FF33] font-bold text-[10px] px-2 py-1 border border-[#232323] tracking-widest">
+            ROUND {currentRoundIndex + 1}/{totalRounds}
           </div>
-        </header>
-
-        <main
-          ref={containerScrollRef}
-          className="flex-1 overflow-y-auto px-6 py-4 flex flex-col justify-center min-h-0 pb-24 scroll-smooth"
-        >
-          {/* WELCOME PHASE */}
-          {phase === "WELCOME" && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
-                <p className="text-xs leading-relaxed text-[#232323] font-medium mb-5">
-                  Train your metacognition – how well do you know what you know?
-                </p>
-                <div className="space-y-2 border-t border-dashed border-[#232323]/30 pt-4 text-[11px]">
-                  <div className="flex gap-1.5">
-                    <span className="font-bold text-[#8B2626] uppercase w-14 inline-block">
-                      THEME:
-                    </span>
-                    <span className="text-[#232323] font-semibold">
-                      {gameData.industry_theme}
-                    </span>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <span className="font-bold text-[#8B2626] uppercase w-14 inline-block">
-                      ROUNDS:
-                    </span>
-                    <span className="text-[#232323] font-semibold">
-                      {totalRounds}
-                    </span>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <span className="font-bold text-[#8B2626] uppercase w-14 inline-block">
-                      GOAL:
-                    </span>
-                    <span className="text-[#232323] font-semibold">
-                      Calibrate confidence with accuracy
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => setPhase("ANCHOR")}
-                className="w-full py-3 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5 border border-[#232323]"
-              >
-                START GUT CHECK
-              </button>
-            </div>
-          )}
-
-          {/* ANCHOR PHASE */}
-          {phase === "ANCHOR" && activeQuestion && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
-                <p className="text-xs leading-relaxed text-[#232323] font-medium">
-                  {activeQuestion.anchor_statement}
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  onClick={() => {
-                    saveCurrentRoundSlice({ anchorGuess: true });
-                    setPhase("REAL_QUESTION");
-                  }}
-                  className="py-3.5 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase border border-[#232323] shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5"
-                >
-                  YES
-                </button>
-                <button
-                  onClick={() => {
-                    saveCurrentRoundSlice({ anchorGuess: false });
-                    setPhase("REAL_QUESTION");
-                  }}
-                  className="py-3.5 bg-[#FAF6F0] text-[#232323] font-black text-xs tracking-widest uppercase border border-[#232323] shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5"
-                >
-                  NO
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* REAL QUESTION PHASE */}
-          {phase === "REAL_QUESTION" && activeQuestion && (
-            <div className="space-y-5 animate-in fade-in duration-200">
-              <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
-                <p className="text-xs leading-relaxed text-[#232323] font-medium">
-                  {activeQuestion.the_real_question}
-                </p>
-              </div>
-              <div className="space-y-4">
-                <input
-                  type="number"
-                  value={numericInput}
-                  onChange={(e) => setNumericInput(e.target.value)}
-                  placeholder="Enter your answer..."
-                  className="w-full bg-[#FAF6F0] border-2 border-[#232323] px-4 py-3 text-xs font-mono font-bold tracking-wider text-[#232323] shadow-[3px_3px_0px_rgba(35,35,35,0.1)] focus:outline-none"
-                />
-                <button
-                  disabled={!numericInput.trim()}
-                  onClick={() => {
-                    saveCurrentRoundSlice({ realGuess: Number(numericInput) });
-                    setNumericInput("");
-                    setPhase("CONFIDENCE_CHECK");
-                  }}
-                  className={`w-full py-3.5 font-black text-xs tracking-widest uppercase border border-[#232323] ${numericInput.trim() ? "bg-[#8B2626] text-[#FAF6F0] shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5" : "bg-[#C29393] text-[#FAF6F0]/60 cursor-not-allowed shadow-[4px_4px_0px_rgba(35,35,35,0.15)]"}`}
-                >
-                  SUBMIT ANSWER
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* CONFIDENCE CHECK PHASE */}
-          {phase === "CONFIDENCE_CHECK" && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="text-center">
-                <h2 className="text-[11px] font-black tracking-widest text-[#8B2626] uppercase">
-                  CONFIDENCE CHECK
-                </h2>
-              </div>
-              <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0] text-center space-y-2">
-                <p className="text-xs text-[#232323]/80 font-medium">
-                  How confident are you in your answer?
-                </p>
-                <p className="text-xs font-black tracking-wider text-[#8B2626] uppercase">
-                  YOUR ANSWER: {roundResponses[currentRoundIndex]?.realGuess}
-                </p>
-              </div>
-              <div className="space-y-4 pt-2">
-                <div className="text-center">
-                  <span className="text-xl font-black text-[#8B2626] block">
-                    {confidenceInput}%
+        ) : undefined
+      }
+    >
+      <main
+        ref={containerScrollRef}
+        className="flex-1 overflow-y-auto px-6 py-4 flex flex-col justify-center min-h-0 pb-24 scroll-smooth"
+      >
+        {/* WELCOME PHASE */}
+        {phase === "WELCOME" && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
+              <p className="text-xs leading-relaxed text-[#232323] font-medium mb-5">
+                Train your metacognition – how well do you know what you know?
+              </p>
+              <div className="space-y-2 border-t border-dashed border-[#232323]/30 pt-4 text-[11px]">
+                <div className="flex gap-1.5">
+                  <span className="font-bold text-[#8B2626] uppercase w-14 inline-block">
+                    THEME:
                   </span>
-                  <span className="text-[9px] font-bold tracking-widest text-[#232323]/50 block uppercase">
-                    CONFIDENCE
+                  <span className="text-[#232323] font-semibold">
+                    {gameData.industry_theme}
                   </span>
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={confidenceInput}
-                  onChange={(e) => setConfidenceInput(Number(e.target.value))}
-                  className="w-full h-1.5 appearance-none bg-[#232323]/10 outline-none cursor-pointer accent-[#8B2626]"
-                  style={{
-                    background: `linear-gradient(to right, #8B2626 0%, #8B2626 ${confidenceInput}%, rgba(35,35,35,0.1) ${confidenceInput}%, rgba(35,35,35,0.1) 100%)`,
-                  }}
-                />
-                <div className="flex justify-between items-center text-[9px] font-bold text-[#232323]/60 tracking-wider">
-                  <span>0% – TOTAL GUESS</span>
-                  <span>100% – ABSOLUTELY CERTAIN</span>
+                <div className="flex gap-1.5">
+                  <span className="font-bold text-[#8B2626] uppercase w-14 inline-block">
+                    ROUNDS:
+                  </span>
+                  <span className="text-[#232323] font-semibold">
+                    {totalRounds}
+                  </span>
+                </div>
+                <div className="flex gap-1.5">
+                  <span className="font-bold text-[#8B2626] uppercase w-14 inline-block">
+                    GOAL:
+                  </span>
+                  <span className="text-[#232323] font-semibold">
+                    Calibrate confidence with accuracy
+                  </span>
                 </div>
               </div>
+            </div>
+            <button
+              onClick={() => setPhase("ANCHOR")}
+              className="w-full py-3 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5 border border-[#232323]"
+            >
+              START GUT CHECK
+            </button>
+          </div>
+        )}
+
+        {/* ANCHOR PHASE */}
+        {phase === "ANCHOR" && activeQuestion && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
+              <p className="text-xs leading-relaxed text-[#232323] font-medium">
+                {activeQuestion.anchor_statement}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={() => {
-                  saveCurrentRoundSlice({ confidence: confidenceInput });
-                  if (currentRoundIndex < totalRounds - 1) {
-                    setConfidenceInput(50);
-                    setCurrentRoundIndex((prev) => prev + 1);
-                    setPhase("ANCHOR");
-                  } else {
-                    setPhase("METRICS");
-                  }
+                  saveCurrentRoundSlice({ anchorGuess: true });
+                  setPhase("REAL_QUESTION");
                 }}
-                className="w-full py-3.5 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase border border-[#232323] shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5"
+                className="py-3.5 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase border border-[#232323] shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5"
               >
-                SUBMIT CONFIDENCE
+                YES
               </button>
-            </div>
-          )}
-
-          {/* METRICS DASHBOARD PHASE */}
-          {phase === "METRICS" && (
-            <div className="space-y-5 animate-in fade-in duration-200">
-              <div className="text-center">
-                <h2 className="text-[11px] font-black tracking-widest text-[#8B2626] uppercase">
-                  CALIBRATION METRICS
-                </h2>
-              </div>
-              <div className="border border-[#232323] bg-[#FAF6F0] p-4 shadow-[5px_5px_0px_#232323] outline-double outline-4 outline-[#FAF6F0] space-y-4">
-                <div className="bg-[#232323] p-4 text-center border border-[#3A3A3A]">
-                  <span className="text-[9px] font-black text-[#00FF33]/60 tracking-widest block uppercase mb-1">
-                    OVERALL CALIBRATION
-                  </span>
-                  <span className="text-2xl font-black tracking-widest text-[#00FF33] block">
-                    {calculatedPerformanceMetrics.overallScore}/100
-                  </span>
-                </div>
-                <div className="space-y-1 border border-[#232323]/20 p-2.5">
-                  <div className="flex justify-between font-black text-[10px] tracking-wider text-[#232323]/80">
-                    <span>AVG CONFIDENCE:</span>
-                    <span>{calculatedPerformanceMetrics.avgConfidence}%</span>
-                  </div>
-                  <div className="h-2 bg-[#232323]/10 border p-px">
-                    <div
-                      className="h-full bg-[#232323]"
-                      style={{
-                        width: `${calculatedPerformanceMetrics.avgConfidence}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1 border border-[#232323]/20 p-2.5">
-                  <div className="flex justify-between font-black text-[10px] tracking-wider text-[#232323]/80">
-                    <span>AVG ACCURACY:</span>
-                    <span>{calculatedPerformanceMetrics.avgAccuracy}%</span>
-                  </div>
-                  <div className="h-2 bg-[#232323]/10 border p-px">
-                    <div
-                      className="h-full bg-[#232323]"
-                      style={{
-                        width: `${calculatedPerformanceMetrics.avgAccuracy}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className="border border-[#232323]/20 p-3 text-[10px] space-y-2 font-mono">
-                  <span className="font-bold text-[#8B2626] block text-[9px] tracking-wider uppercase border-b border-[#232323]/10 pb-1">
-                    ROUND BY ROUND:
-                  </span>
-                  <div className="space-y-1.5 pt-1">
-                    {calculatedPerformanceMetrics.breakdowns.map(
-                      (item: CalibrationItemBreakdown) => (
-                        <div
-                          key={item.roundNum}
-                          className="flex justify-between text-[#232323]/90 text-[10px] leading-none"
-                        >
-                          <span className="w-16 shrink-0">
-                            ROUND {item.roundNum}:
-                          </span>
-                          <span className="w-20 text-right shrink-0">
-                            {item.confidence}% conf
-                          </span>
-                          <span className="w-20 text-right shrink-0">
-                            {item.accuracy}% acc
-                          </span>
-                          <span className="w-10 text-right font-bold text-[#8B2626] shrink-0">
-                            {item.score}
-                          </span>
-                        </div>
-                      ),
-                    )}
-                  </div>
-                </div>
-                <div className="flex justify-between items-center border border-[#232323]/20 p-2.5 text-[10px] font-black tracking-wider">
-                  <span>CALIBRATION QUALITY:</span>
-                  <span className="text-[#8B2626]">
-                    {calculatedPerformanceMetrics.overallScore >= 75
-                      ? "✓ EXCELLENT"
-                      : calculatedPerformanceMetrics.overallScore >= 50
-                        ? "✓ GOOD"
-                        : calculatedPerformanceMetrics.overallScore >= 25
-                          ? "~ FAIR"
-                          : "✗ POOR"}
-                  </span>
-                </div>
-              </div>
               <button
-                disabled={isSubmittingDb}
-                onClick={handleProcessAndSyncScores}
-                className="w-full py-3.5 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase border border-[#232323] shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5 flex items-center justify-center gap-2"
+                onClick={() => {
+                  saveCurrentRoundSlice({ anchorGuess: false });
+                  setPhase("REAL_QUESTION");
+                }}
+                className="py-3.5 bg-[#FAF6F0] text-[#232323] font-black text-xs tracking-widest uppercase border border-[#232323] shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5"
               >
-                {isSubmittingDb ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>SYNCING RECORDS...</span>
-                  </>
-                ) : (
-                  <span>VIEW ANSWERS</span>
-                )}
+                NO
               </button>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* ITEMISED RESULTS PHASE */}
-          {phase === "RESULTS" && (
-            <div className="space-y-5 animate-in fade-in duration-200">
+        {/* REAL QUESTION PHASE */}
+        {phase === "REAL_QUESTION" && activeQuestion && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+            <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0]">
+              <p className="text-xs leading-relaxed text-[#232323] font-medium">
+                {activeQuestion.the_real_question}
+              </p>
+            </div>
+            <div className="space-y-4">
+              <input
+                type="number"
+                value={numericInput}
+                onChange={(e) => setNumericInput(e.target.value)}
+                placeholder="Enter your answer..."
+                className="w-full bg-[#FAF6F0] border-2 border-[#232323] px-4 py-3 text-xs font-mono font-bold tracking-wider text-[#232323] shadow-[3px_3px_0px_rgba(35,35,35,0.1)] focus:outline-none"
+              />
+              <button
+                disabled={!numericInput.trim()}
+                onClick={() => {
+                  saveCurrentRoundSlice({ realGuess: Number(numericInput) });
+                  setNumericInput("");
+                  setPhase("CONFIDENCE_CHECK");
+                }}
+                className={`w-full py-3.5 font-black text-xs tracking-widest uppercase border border-[#232323] ${numericInput.trim() ? "bg-[#8B2626] text-[#FAF6F0] shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5" : "bg-[#C29393] text-[#FAF6F0]/60 cursor-not-allowed shadow-[4px_4px_0px_rgba(35,35,35,0.15)]"}`}
+              >
+                SUBMIT ANSWER
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* CONFIDENCE CHECK PHASE */}
+        {phase === "CONFIDENCE_CHECK" && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <div className="text-center">
+              <h2 className="text-[11px] font-black tracking-widest text-[#8B2626] uppercase">
+                CONFIDENCE CHECK
+              </h2>
+            </div>
+            <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0] text-center space-y-2">
+              <p className="text-xs text-[#232323]/80 font-medium">
+                How confident are you in your answer?
+              </p>
+              <p className="text-xs font-black tracking-wider text-[#8B2626] uppercase">
+                YOUR ANSWER: {roundResponses[currentRoundIndex]?.realGuess}
+              </p>
+            </div>
+            <div className="space-y-4 pt-2">
               <div className="text-center">
-                <h2 className="text-[11px] font-black tracking-widest text-[#8B2626] uppercase">
-                  CALIBRATION RESULTS
-                </h2>
+                <span className="text-xl font-black text-[#8B2626] block">
+                  {confidenceInput}%
+                </span>
+                <span className="text-[9px] font-bold tracking-widest text-[#232323]/50 block uppercase">
+                  CONFIDENCE
+                </span>
               </div>
-              <div className="border border-[#232323] bg-[#FAF6F0] p-4 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0] space-y-3">
-                <div className="bg-[#232323] p-3 text-center border border-[#3A3A3A]">
-                  <span className="text-[9px] font-bold text-[#00FF33]/60 tracking-widest block uppercase mb-0.5">
-                    CALIBRATION SCORE
-                  </span>
-                  <span className="text-xl font-black text-[#00FF33] tracking-widest block">
-                    {calculatedPerformanceMetrics.overallScore}/100
-                  </span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={confidenceInput}
+                onChange={(e) => setConfidenceInput(Number(e.target.value))}
+                className="w-full h-1.5 appearance-none bg-[#232323]/10 outline-none cursor-pointer accent-[#8B2626]"
+                style={{
+                  background: `linear-gradient(to right, #8B2626 0%, #8B2626 ${confidenceInput}%, rgba(35,35,35,0.1) ${confidenceInput}%, rgba(35,35,35,0.1) 100%)`,
+                }}
+              />
+              <div className="flex justify-between items-center text-[9px] font-bold text-[#232323]/60 tracking-wider">
+                <span>0% – TOTAL GUESS</span>
+                <span>100% – ABSOLUTELY CERTAIN</span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                saveCurrentRoundSlice({ confidence: confidenceInput });
+                if (currentRoundIndex < totalRounds - 1) {
+                  setConfidenceInput(50);
+                  setCurrentRoundIndex((prev) => prev + 1);
+                  setPhase("ANCHOR");
+                } else {
+                  setPhase("METRICS");
+                }
+              }}
+              className="w-full py-3.5 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase border border-[#232323] shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5"
+            >
+              SUBMIT CONFIDENCE
+            </button>
+          </div>
+        )}
+
+        {/* METRICS DASHBOARD PHASE */}
+        {phase === "METRICS" && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+            <div className="text-center">
+              <h2 className="text-[11px] font-black tracking-widest text-[#8B2626] uppercase">
+                CALIBRATION METRICS
+              </h2>
+            </div>
+            <div className="border border-[#232323] bg-[#FAF6F0] p-4 shadow-[5px_5px_0px_#232323] outline-double outline-4 outline-[#FAF6F0] space-y-4">
+              <div className="bg-[#232323] p-4 text-center border border-[#3A3A3A]">
+                <span className="text-[9px] font-black text-[#00FF33]/60 tracking-widest block uppercase mb-1">
+                  OVERALL CALIBRATION
+                </span>
+                <span className="text-2xl font-black tracking-widest text-[#00FF33] block">
+                  {calculatedPerformanceMetrics.overallScore}/100
+                </span>
+              </div>
+              <div className="space-y-1 border border-[#232323]/20 p-2.5">
+                <div className="flex justify-between font-black text-[10px] tracking-wider text-[#232323]/80">
+                  <span>AVG CONFIDENCE:</span>
+                  <span>{calculatedPerformanceMetrics.avgConfidence}%</span>
                 </div>
-                <div className="text-[10px] space-y-1.5 font-mono pt-1">
+                <div className="h-2 bg-[#232323]/10 border p-px">
+                  <div
+                    className="h-full bg-[#232323]"
+                    style={{
+                      width: `${calculatedPerformanceMetrics.avgConfidence}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1 border border-[#232323]/20 p-2.5">
+                <div className="flex justify-between font-black text-[10px] tracking-wider text-[#232323]/80">
+                  <span>AVG ACCURACY:</span>
+                  <span>{calculatedPerformanceMetrics.avgAccuracy}%</span>
+                </div>
+                <div className="h-2 bg-[#232323]/10 border p-px">
+                  <div
+                    className="h-full bg-[#232323]"
+                    style={{
+                      width: `${calculatedPerformanceMetrics.avgAccuracy}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="border border-[#232323]/20 p-3 text-[10px] space-y-2 font-mono">
+                <span className="font-bold text-[#8B2626] block text-[9px] tracking-wider uppercase border-b border-[#232323]/10 pb-1">
+                  ROUND BY ROUND:
+                </span>
+                <div className="space-y-1.5 pt-1">
                   {calculatedPerformanceMetrics.breakdowns.map(
                     (item: CalibrationItemBreakdown) => (
                       <div
                         key={item.roundNum}
-                        className="flex justify-between text-[#232323]/80 text-[10px]"
+                        className="flex justify-between text-[#232323]/90 text-[10px] leading-none"
                       >
                         <span className="w-16 shrink-0">
-                          ROUND {item.roundNum}
+                          ROUND {item.roundNum}:
                         </span>
                         <span className="w-20 text-right shrink-0">
-                          {item.confidence}% CONF
+                          {item.confidence}% conf
                         </span>
                         <span className="w-20 text-right shrink-0">
-                          {item.accuracy}% ACC
+                          {item.accuracy}% acc
                         </span>
                         <span className="w-10 text-right font-bold text-[#8B2626] shrink-0">
                           {item.score}
@@ -598,40 +457,110 @@ const GutCheckPage = () => {
                   )}
                 </div>
               </div>
-              <div className="border border-[#232323] bg-[#FAF6F0] p-4 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0] space-y-4">
-                <h3 className="text-center font-black text-[10px] tracking-widest text-[#8B2626] uppercase border-b border-[#232323]/10 pb-2">
-                  ACTUAL ANSWERS
-                </h3>
-                <div className="space-y-4 divide-y divide-dashed divide-[#232323]/20">
-                  {calculatedPerformanceMetrics.breakdowns.map(
-                    (item: CalibrationItemBreakdown) => (
-                      <div
-                        key={item.roundNum}
-                        className={`text-[11px] space-y-1.5 ${item.roundNum > 1 ? "pt-3" : ""}`}
-                      >
-                        <p className="font-bold text-[#8B2626] leading-tight">
-                          Q{item.roundNum}: {item.questionText}
-                        </p>
-                        <div className="flex justify-between font-mono font-bold text-[#8B2626] text-[10px] pt-0.5">
-                          <span>Your guess: {item.guess}</span>
-                          <span>Actual: {item.actual}</span>
-                        </div>
-                      </div>
-                    ),
-                  )}
-                </div>
+              <div className="flex justify-between items-center border border-[#232323]/20 p-2.5 text-[10px] font-black tracking-wider">
+                <span>CALIBRATION QUALITY:</span>
+                <span className="text-[#8B2626]">
+                  {calculatedPerformanceMetrics.overallScore >= 75
+                    ? "✓ EXCELLENT"
+                    : calculatedPerformanceMetrics.overallScore >= 50
+                      ? "✓ GOOD"
+                      : calculatedPerformanceMetrics.overallScore >= 25
+                        ? "~ FAIR"
+                        : "✗ POOR"}
+                </span>
               </div>
-              <button
-                onClick={handleBackToHome}
-                className="w-full py-3.5 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase border border-[#232323] shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5"
-              >
-                CONTINUE
-              </button>
             </div>
-          )}
-        </main>
-      </div>
-    </div>
+            <button
+              disabled={isSubmittingDb}
+              onClick={handleProcessAndSyncScores}
+              className="w-full py-3.5 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase border border-[#232323] shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5 flex items-center justify-center gap-2"
+            >
+              {isSubmittingDb ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>SYNCING RECORDS...</span>
+                </>
+              ) : (
+                <span>VIEW ANSWERS</span>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* ITEMISED RESULTS PHASE */}
+        {phase === "RESULTS" && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+            <div className="text-center">
+              <h2 className="text-[11px] font-black tracking-widest text-[#8B2626] uppercase">
+                CALIBRATION RESULTS
+              </h2>
+            </div>
+            <div className="border border-[#232323] bg-[#FAF6F0] p-4 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0] space-y-3">
+              <div className="bg-[#232323] p-3 text-center border border-[#3A3A3A]">
+                <span className="text-[9px] font-bold text-[#00FF33]/60 tracking-widest block uppercase mb-0.5">
+                  CALIBRATION SCORE
+                </span>
+                <span className="text-xl font-black text-[#00FF33] tracking-widest block">
+                  {calculatedPerformanceMetrics.overallScore}/100
+                </span>
+              </div>
+              <div className="text-[10px] space-y-1.5 font-mono pt-1">
+                {calculatedPerformanceMetrics.breakdowns.map(
+                  (item: CalibrationItemBreakdown) => (
+                    <div
+                      key={item.roundNum}
+                      className="flex justify-between text-[#232323]/80 text-[10px]"
+                    >
+                      <span className="w-16 shrink-0">
+                        ROUND {item.roundNum}
+                      </span>
+                      <span className="w-20 text-right shrink-0">
+                        {item.confidence}% CONF
+                      </span>
+                      <span className="w-20 text-right shrink-0">
+                        {item.accuracy}% ACC
+                      </span>
+                      <span className="w-10 text-right font-bold text-[#8B2626] shrink-0">
+                        {item.score}
+                      </span>
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
+            <div className="border border-[#232323] bg-[#FAF6F0] p-4 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0] space-y-4">
+              <h3 className="text-center font-black text-[10px] tracking-widest text-[#8B2626] uppercase border-b border-[#232323]/10 pb-2">
+                ACTUAL ANSWERS
+              </h3>
+              <div className="space-y-4 divide-y divide-dashed divide-[#232323]/20">
+                {calculatedPerformanceMetrics.breakdowns.map(
+                  (item: CalibrationItemBreakdown) => (
+                    <div
+                      key={item.roundNum}
+                      className={`text-[11px] space-y-1.5 ${item.roundNum > 1 ? "pt-3" : ""}`}
+                    >
+                      <p className="font-bold text-[#8B2626] leading-tight">
+                        Q{item.roundNum}: {item.questionText}
+                      </p>
+                      <div className="flex justify-between font-mono font-bold text-[#8B2626] text-[10px] pt-0.5">
+                        <span>Your guess: {item.guess}</span>
+                        <span>Actual: {item.actual}</span>
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
+            <button
+              onClick={handleBackToHome}
+              className="w-full py-3.5 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase border border-[#232323] shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5"
+            >
+              CONTINUE
+            </button>
+          </div>
+        )}
+      </main>
+    </GameShell>
   );
 };
 

@@ -5,6 +5,7 @@ import { ArrowLeft, Check, Loader2 } from "lucide-react";
 import { fetchServerGameData, saveUserGameStats } from "./actions";
 import { ExtractFactsGame } from "@/utils/generate_game";
 import { useRouter } from "next/navigation";
+import { useDeviceId } from "@/hooks/useDeviceId";
 
 type AppPhase = "INTRO" | "QUIZ" | "TAKEAWAY" | "METRICS" | "COMPLETE";
 
@@ -15,7 +16,7 @@ const ExtractFactsPage = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmittingDb, setIsSubmittingDb] = useState<boolean>(false);
 
-  const [deviceId, setDeviceId] = useState<string>("");
+  const deviceIdRef = useDeviceId();
 
   const [phase, setPhase] = useState<AppPhase>("INTRO");
   const [currentQuizIndex, setCurrentQuizIndex] = useState<number>(0);
@@ -43,13 +44,7 @@ const ExtractFactsPage = () => {
   useEffect(() => {
     async function loadGame() {
       setIsLoading(true);
-      let localDevice = localStorage.getItem("meta_mind_global_device_id");
-      if (!localDevice) {
-        localDevice = window.crypto.randomUUID();
-        localStorage.setItem("meta_mind_global_device_id", localDevice);
-      }
-      setDeviceId(localDevice);
-      const response = await fetchServerGameData(localDevice);
+      const response = await fetchServerGameData(deviceIdRef.current);
 
       if (!response.success) {
         if (response.error === "ALREADY_PLAYED") {
@@ -64,7 +59,7 @@ const ExtractFactsPage = () => {
       setIsLoading(false);
     }
     loadGame();
-  }, [router]);
+  }, [deviceIdRef, router]);
 
   useEffect(() => {
     if (contentScrollRef.current) {
@@ -90,7 +85,10 @@ const ExtractFactsPage = () => {
 
   const handleMetricsCompletionSubmit = async () => {
     setIsSubmittingDb(true);
-    const dbTransaction = await saveUserGameStats(finalComputedScore, deviceId);
+    const dbTransaction = await saveUserGameStats(
+      finalComputedScore,
+      deviceIdRef.current,
+    );
 
     setIsSubmittingDb(false);
     if (dbTransaction.success) {
@@ -417,8 +415,10 @@ const ExtractFactsPage = () => {
                             <p className="text-[#7C6560] leading-normal text-[11px]">
                               Correct:{" "}
                               <span className="font-bold text-[#22C55E]">
-                                {String.fromCharCode(65 + q.correct_answer_index)}.{" "}
-                                {q.options[q.correct_answer_index]}
+                                {String.fromCharCode(
+                                  65 + q.correct_answer_index,
+                                )}
+                                . {q.options[q.correct_answer_index]}
                               </span>
                             </p>
                           )}

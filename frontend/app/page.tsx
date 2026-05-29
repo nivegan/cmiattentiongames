@@ -36,6 +36,10 @@ const HomePage = () => {
             <MenubarItem asChild>
               <Link href="/play/extract_facts">Extract Facts</Link>
             </MenubarItem>
+
+            <MenubarItem asChild>
+              <Link href="/play/steady_gaze">Steady Gaze</Link>
+            </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
       </Menubar>
