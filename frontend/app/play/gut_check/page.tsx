@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
-import { fetchServerGameData, saveUserGameStats } from "./actions";
+import { fetchServerGameData } from "./actions";
+import { saveUserGameStat } from "@/utils/saveUserGameStat";
 import { GutCheckGame } from "@/utils/generate_game";
 import { useRouter } from "next/navigation";
 import { useDeviceId } from "@/hooks/useDeviceId";
@@ -64,20 +65,21 @@ const GutCheckPage = () => {
   useEffect(() => {
     async function loadGame() {
       setIsLoading(true);
-
-      const response = await fetchServerGameData(deviceIdRef.current);
-
-      if (!response.success) {
-        if (response.error === "ALREADY_PLAYED") {
-          router.push("/");
-          return;
+      try {
+        const response = await fetchServerGameData(deviceIdRef.current);
+        if (!response.success) {
+          if (response.error === "ALREADY_PLAYED") {
+            router.push("/");
+            return;
+          }
         }
+        if (response.data) {
+          setGameData(response.data);
+        }
+        setIsLoading(false);
+      } catch {
+        setIsLoading(false);
       }
-
-      if (response.data) {
-        setGameData(response.data);
-      }
-      setIsLoading(false);
     }
     loadGame();
   }, [deviceIdRef, router]);
@@ -134,13 +136,17 @@ const GutCheckPage = () => {
 
       accumulatedConfidence += confVal;
 
-      // Exact-match guard avoids division-by-zero when trueVal === 0 or an
-      // exact hit would round to 99 due to floating-point error.
       let calculatedAcc = 0;
-      if (trueVal === guessVal) {
+      if (recorded?.realGuess === undefined) {
+        // Question not answered — no accuracy awarded regardless of trueVal.
+        calculatedAcc = 0;
+      } else if (trueVal === guessVal) {
         calculatedAcc = 100;
+      } else if (trueVal === 0) {
+        // trueVal is 0 but guessVal is not — division would be Infinity.
+        calculatedAcc = 0;
       } else {
-        const errorRatio = Math.abs(trueVal - guessVal) / trueVal;
+        const errorRatio = Math.abs(trueVal - guessVal) / Math.abs(trueVal);
         calculatedAcc = Math.max(
           0,
           Math.min(100, Math.round((1 - errorRatio) * 100)),
@@ -167,10 +173,14 @@ const GutCheckPage = () => {
       });
     });
 
-    const averageConfidence = Math.round(accumulatedConfidence / totalRounds);
-    const averageAccuracy = Math.round(accumulatedAccuracy / totalRounds);
+    const roundCount = itemsList.length;
+    if (roundCount === 0) {
+      return { overallScore: 0, avgConfidence: 0, avgAccuracy: 0, breakdowns: [] };
+    }
+    const averageConfidence = Math.round(accumulatedConfidence / roundCount);
+    const averageAccuracy = Math.round(accumulatedAccuracy / roundCount);
     const finalComputedOverallScore = Math.round(
-      itemsList.reduce((sum, item) => sum + item.score, 0) / totalRounds,
+      itemsList.reduce((sum, item) => sum + item.score, 0) / roundCount,
     );
 
     return {
@@ -179,24 +189,32 @@ const GutCheckPage = () => {
       avgAccuracy: averageAccuracy,
       breakdowns: itemsList,
     };
-  }, [gameData, roundResponses, totalRounds]);
+  }, [gameData, roundResponses]);
 
   const handleProcessAndSyncScores = async () => {
     setIsSubmittingDb(true);
-    const connectionResult = await saveUserGameStats(
-      calculatedPerformanceMetrics.overallScore,
-      deviceIdRef.current,
-    );
-    setIsSubmittingDb(false);
-
-    if (connectionResult.success) {
-      setPhase("RESULTS");
-    } else if (connectionResult.error === "ALREADY_PLAYED") {
-      router.push("/");
-    } else {
+    try {
+      const connectionResult = await saveUserGameStat(
+        calculatedPerformanceMetrics.overallScore,
+        deviceIdRef.current,
+        "GUT_CHECK",
+        "web_gut_check_v1",
+      );
+      if (connectionResult.success) {
+        setPhase("RESULTS");
+      } else if (connectionResult.error === "ALREADY_PLAYED") {
+        router.push("/");
+      } else {
+        alert(
+          "Metrics Sync Interrupted. Database tracking records could not verify save operations.",
+        );
+      }
+    } catch {
       alert(
         "Metrics Sync Interrupted. Database tracking records could not verify save operations.",
       );
+    } finally {
+      setIsSubmittingDb(false);
     }
   };
 

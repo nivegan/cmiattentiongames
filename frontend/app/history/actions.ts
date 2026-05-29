@@ -19,7 +19,7 @@ export interface HistoryResult {
   streak: number;
 }
 
-function toISTDateKey(date: Date): string {
+const toISTDateKey = (date: Date): string => {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata",
     year: "numeric",
@@ -31,7 +31,7 @@ function toISTDateKey(date: Date): string {
 // Counts consecutive IST calendar days the user played, walking backward from
 // the most recent play. The streak stays alive if the user played either today
 // or yesterday (so opening the app before playing today doesn't break it).
-function computeStreak(dates: Date[]): number {
+const computeStreak = (dates: Date[]): number => {
   if (dates.length === 0) return 0;
 
   const playedDays = new Set(dates.map(toISTDateKey));
@@ -55,7 +55,7 @@ function computeStreak(dates: Date[]): number {
   return streak;
 }
 
-export async function fetchHistory(deviceId: string): Promise<HistoryResult> {
+export const fetchHistory = async (deviceId: string): Promise<HistoryResult> => {
   const { userId } = await auth();
   const identifier = userId || deviceId;
 

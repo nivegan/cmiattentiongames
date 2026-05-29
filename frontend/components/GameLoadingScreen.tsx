@@ -1,4 +1,4 @@
-export function GameLoadingScreen() {
+export const GameLoadingScreen = () => {
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#232323] font-mono flex items-center justify-center p-4">
       <div className="text-center space-y-3">
@@ -9,4 +9,4 @@ export function GameLoadingScreen() {
       </div>
     </div>
   );
-}
+};

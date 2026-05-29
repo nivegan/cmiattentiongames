@@ -3,31 +3,37 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { checkAlreadyPlayed, saveUserGameStats } from "./actions";
+import { checkAlreadyPlayed } from "./actions";
+import { saveUserGameStat } from "@/utils/saveUserGameStat";
 import { GameLoadingScreen } from "@/components/GameLoadingScreen";
+import { GameErrorScreen } from "@/components/GameErrorScreen";
 import { useRouter } from "next/navigation";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { GameShell } from "@/components/GameShell";
 
 // ── Client-side game data (mirrors generate_game.ts logic, no server needed) ──
 
-function getTodayIST(): string {
+const getTodayIST = (): string => {
   const now = new Date();
   return new Date(now.getTime() + 5.5 * 60 * 60 * 1000)
     .toISOString()
     .split("T")[0];
 }
 
-// djb2 hash → deterministic uint32 from any string
-function getDailySeed(dateStr: string): number {
+// djb2 hash → deterministic uint32 from any string.
+// Returns an integer (not a float) because mulberry32 requires an integer seed.
+// The server-side getDailySeed in generate_game.ts produces a float via Math.sin
+// for simple parameter interpolation — that float would lose the entropy that
+// mulberry32 needs to generate well-distributed spawn positions.
+const getDailySeed = (dateStr: string): number => {
   let hash = 5381;
   for (let i = 0; i < dateStr.length; i++) {
     hash = (Math.imul(hash, 33) ^ dateStr.charCodeAt(i)) >>> 0;
   }
-  return hash; // uint32 integer
+  return hash; // uint32
 }
 
-function hslToHex(h: number, s: number, l: number): string {
+const hslToHex = (h: number, s: number, l: number): string => {
   l /= 100;
   const a = (s * Math.min(l, 1 - l)) / 100;
   const f = (n: number) => {
@@ -40,7 +46,7 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-function computeGameData() {
+const computeGameData = () => {
   const today = getTodayIST();
   const seedInt = getDailySeed(today + "steady_gaze");
   // Normalize to [0, 1) for display-value computations
@@ -62,7 +68,7 @@ function computeGameData() {
 
 // ── Seeded PRNG — spawn positions and delays are deterministic per day ──
 
-function mulberry32(seed: number): () => number {
+const mulberry32 = (seed: number): (() => number) => {
   let s = seed >>> 0; // ensure uint32
   return () => {
     s = (s + 0x6d2b79f5) >>> 0;
@@ -118,6 +124,7 @@ export default function SteadyGazePage() {
   const deviceIdRef = useDeviceId();
 
   const [isChecking, setIsChecking] = useState(true);
+  const [isError, setIsError] = useState(false);
   const [phase, setPhase] = useState<GamePhase>("WELCOME");
   const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
   const [displayMisses, setDisplayMisses] = useState(0);
@@ -128,6 +135,7 @@ export default function SteadyGazePage() {
     penaltyTaps: 0,
   });
   const [alreadyPlayed, setAlreadyPlayed] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
 
   const gameAreaRef = useRef<HTMLDivElement>(null);
   const dotRef = useRef<HTMLDivElement>(null);
@@ -212,6 +220,8 @@ export default function SteadyGazePage() {
       if (!state?.active) return;
 
       if (state.lastFrameTime === 0) state.lastFrameTime = timestamp;
+      // Cap dt at 50 ms so a backgrounded tab resuming after seconds doesn't
+      // advance the clock by more than one frame and instantly expire the dot.
       const dt = Math.min((timestamp - state.lastFrameTime) / 1000, 0.05);
       state.lastFrameTime = timestamp;
 
@@ -290,21 +300,41 @@ export default function SteadyGazePage() {
   // Save score once phase reaches SAVING
   useEffect(() => {
     if (phase !== "SAVING") return;
-    saveUserGameStats(result.score, deviceIdRef.current).then((res) => {
-      if (res.error === "ALREADY_PLAYED") setAlreadyPlayed(true);
-      setPhase("RESULTS");
-    });
+    async function save() {
+      try {
+        const res = await saveUserGameStat(
+          result.score,
+          deviceIdRef.current,
+          "STEADY_GAZE",
+          "web_steady_gaze_v1",
+        );
+        if (res.error === "ALREADY_PLAYED") setAlreadyPlayed(true);
+        else if (!res.success) setSaveFailed(true);
+      } catch {
+        setSaveFailed(true);
+      } finally {
+        setPhase("RESULTS");
+      }
+    }
+    save();
   }, [deviceIdRef, phase, result.score]);
 
   // Daily-lock check on mount — redirect if already played today
   useEffect(() => {
-    checkAlreadyPlayed(deviceIdRef.current).then(({ alreadyPlayed }) => {
-      if (alreadyPlayed) {
-        router.push("/");
-      } else {
+    async function checkLock() {
+      try {
+        const { alreadyPlayed } = await checkAlreadyPlayed(deviceIdRef.current);
+        if (alreadyPlayed) {
+          router.push("/");
+        } else {
+          setIsChecking(false);
+        }
+      } catch {
         setIsChecking(false);
+        setIsError(true);
       }
-    });
+    }
+    checkLock();
   }, [deviceIdRef, router]);
 
   // RAF cleanup on unmount
@@ -357,6 +387,7 @@ export default function SteadyGazePage() {
   // ── Render ──
 
   if (isChecking) return <GameLoadingScreen />;
+  if (isError) return <GameErrorScreen />;
 
   return (
     <GameShell
@@ -521,6 +552,11 @@ export default function SteadyGazePage() {
                 {alreadyPlayed && (
                   <p className="text-[9px] font-bold tracking-wider text-[#232323]/50 uppercase">
                     Score not saved — already played today
+                  </p>
+                )}
+                {saveFailed && (
+                  <p className="text-[9px] font-bold tracking-wider text-[#232323]/50 uppercase">
+                    Score not saved — sync failed
                   </p>
                 )}
               </div>

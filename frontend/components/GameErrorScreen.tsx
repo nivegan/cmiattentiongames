@@ -2,9 +2,9 @@ interface GameErrorScreenProps {
   message?: string;
 }
 
-export function GameErrorScreen({
+export const GameErrorScreen = ({
   message = "Telemetry metrics payload failed verification configurations.",
-}: GameErrorScreenProps) {
+}: GameErrorScreenProps) => {
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#232323] font-mono flex items-center justify-center p-4">
       <div className="bg-[#FAF6F0] border-2 border-[#8B2626] p-6 max-w-sm text-center shadow-[4px_4px_0px_#8B2626]">
@@ -21,4 +21,4 @@ export function GameErrorScreen({
       </div>
     </div>
   );
-}
+};

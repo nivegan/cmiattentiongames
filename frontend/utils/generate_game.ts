@@ -4,13 +4,11 @@ import { hideBin } from "yargs/helpers";
 import dotenv from "dotenv";
 import { prisma } from "./prismaInit";
 
-dotenv.config({ path: ".env.local" });
+// No-op in the Next.js runtime (env vars are loaded by the framework), but
+// required when this file is invoked directly as a CLI script.
+dotenv.config();
 
-const { GOOGLE_GENERATIVE_AI_API_KEY, DATABASE_URL } = process.env;
-
-if (!GOOGLE_GENERATIVE_AI_API_KEY || !DATABASE_URL) {
-  throw new Error("Missing required environment variables.");
-}
+const { GOOGLE_GENERATIVE_AI_API_KEY } = process.env;
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -39,11 +37,14 @@ const GutCheckSchema = z.object({
     .array(
       z.object({
         anchor_statement: z.string(),
+        // Gemini returns booleans as string literals ("true"/"false") even when
+        // the response MIME type is application/json — preprocess coerces them.
         is_anchor_true: z.preprocess((val) => {
           if (typeof val === "string") return val.toLowerCase() === "true";
           return Boolean(val);
         }, z.boolean()),
         the_real_question: z.string(),
+        // Same reason as is_anchor_true — numbers arrive as strings.
         the_real_number: z.preprocess(
           (val) => parseFloat(val as string),
           z.number(),
@@ -97,20 +98,28 @@ const ClearAirSchema = z.object({
 
 // ── Math Core & Algorithmic Helper Functions ───────────────────────────────
 
-// Converts a date string into a stable [0, 1) float so that STEADY_GAZE and
-// CLEAR_THE_AIR always produce the same parameters for a given calendar day
-// without calling Gemini. The sin() at the end spreads the integer hash into
-// a well-distributed fractional value.
-function getDailySeed(dateStr: string): number {
+// Returns a stable [0, 1) float for use as a scalar seed (colors, speeds, etc.).
+const getDailySeed = (dateStr: string): number => {
   let hash = 0;
   for (let i = 0; i < dateStr.length; i++) {
-    // djb2-style: shift-and-add hash that avalanches single-char changes
     hash = dateStr.charCodeAt(i) + ((hash << 5) - hash);
   }
   return Math.abs(Math.sin(hash)) % 1;
 }
 
-function hslToHex(h: number, s: number, l: number): string {
+// Returns a stable uint32 integer for use as a PRNG seed (mulberry32 requires
+// an integer — passing a float like 0.7341 would truncate to 0 via >>> 0,
+// making every day's spawn sequence identical). Matches the client-side
+// getDailySeed in steady_gaze/page.tsx exactly.
+const getDailySeedInt = (dateStr: string): number => {
+  let hash = 5381;
+  for (let i = 0; i < dateStr.length; i++) {
+    hash = (Math.imul(hash, 33) ^ dateStr.charCodeAt(i)) >>> 0;
+  }
+  return hash; // uint32
+}
+
+const hslToHex = (h: number, s: number, l: number): string => {
   l /= 100;
   const a = (s * Math.min(l, 1 - l)) / 100;
   const f = (n: number) => {
@@ -123,10 +132,10 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-function generateSteadyGazeParams(today: string) {
-  // The "steady_gaze" suffix differentiates this seed from the clear_air one so
-  // both games get different colours on the same day.
-  const seed = getDailySeed(today + "steady_gaze");
+const generateSteadyGazeParams = (today: string) => {
+  // Use the djb2 uint32 seed (same algorithm as the client) normalised to [0,1)
+  // so the stored visual params match what the client actually renders.
+  const seed = getDailySeedInt(today + "steady_gaze") / 0x100000000;
   const baseHue = Math.floor(seed * 360);
   // Complementary colour (opposite on the colour wheel) ensures strong contrast
   // between background and dot without manual colour curation.
@@ -138,14 +147,14 @@ function generateSteadyGazeParams(today: string) {
     screen_color: hslToHex(baseHue, 60, 45),
     dot_color: hslToHex(oppositeHue, 85, 65),
     shimmer_frequency: parseFloat((2.0 + seed * 4.0).toFixed(1)),
-    spawn_pattern_seed: parseFloat(seed.toFixed(4)),
+    spawn_pattern_seed: getDailySeedInt(today + "steady_gaze"),
     base_shimmer_speed_multiplier: 1.25,
     miss_deceleration_factor: 0.8,
     max_expansion_cap_seconds: 4.5,
   };
 }
 
-function generateClearAirParams(today: string) {
+const generateClearAirParams = (today: string) => {
   const seed = getDailySeed(today + "clear_air");
   const variantId = Math.floor(seed * 1000);
 
@@ -166,6 +175,8 @@ const generate = async (
   customMode: GameMode | null = null,
   forceRefresh: boolean = false,
 ): Promise<GameResult> => {
+  // argv is parsed for CLI compatibility only. Server actions always supply
+  // customMode, so argv.mode is never consulted in the web runtime.
   const argv = yargs(hideBin(process.argv)).argv as {
     mode?: string;
     forceRefresh?: boolean | string;
@@ -175,8 +186,14 @@ const generate = async (
     "EXTRACT_THE_FACTS") as GameMode;
 
   const now = new Date();
-  const offset = now.getTimezoneOffset() * 60000;
-  const today = new Date(now.getTime() - offset).toISOString().split("T")[0];
+  // Hard-code IST offset (+5:30) so the cache key always matches the IST
+  // day boundary used by checkHasPlayedToday / getCurrentDayRange.ts.
+  // getTimezoneOffset() would return 0 on a UTC server, giving the wrong date
+  // for 5.5 hours after each IST midnight.
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const today = new Date(now.getTime() + IST_OFFSET_MS)
+    .toISOString()
+    .split("T")[0];
   const todayDate = new Date(`${today}T00:00:00.000Z`);
 
   try {
@@ -235,6 +252,12 @@ const generate = async (
       const rawParams = generateClearAirParams(today);
       validated = ClearAirSchema.parse(rawParams);
     } else {
+      if (!GOOGLE_GENERATIVE_AI_API_KEY) {
+        throw new Error(
+          "Missing GOOGLE_GENERATIVE_AI_API_KEY environment variable.",
+        );
+      }
+      const apiKey: string = GOOGLE_GENERATIVE_AI_API_KEY;
       let prompt = "";
       if (mode === "GUT_CHECK") {
         prompt = `Return ONLY a raw JSON object for 'Gut Check'.
@@ -293,7 +316,7 @@ Expected JSON Structure:
 }`;
       }
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GOOGLE_GENERATIVE_AI_API_KEY}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`;
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -350,9 +373,6 @@ Expected JSON Structure:
       },
     });
 
-    // const finalOutput = JSON.stringify(validated, null, 2);
-    // process.stdout.write(finalOutput);
-
     return validated;
   } catch (err) {
     console.error("🛑 SCRIPT ERROR:", (err as Error).message);
@@ -364,23 +384,5 @@ Expected JSON Structure:
     await prisma.$disconnect();
   }
 };
-
-// ==========================================
-// 5. TERMINAL EXECUTION HOOK
-// ==========================================
-// if (
-//   process.argv[1] &&
-//   (process.argv[1].endsWith("generate_game.js") ||
-//     process.argv[1].endsWith("generate_game.ts"))
-// ) {
-//   const argv = yargs(hideBin(process.argv)).argv as {
-//     forceRefresh?: boolean | string;
-//     mode?: string;
-//   };
-//   const force = argv.forceRefresh === true || argv.forceRefresh === "true";
-//   const targetMode = (argv.mode as GameMode) || null;
-
-//   generate(targetMode, force);
-// }
 
 export { generate };

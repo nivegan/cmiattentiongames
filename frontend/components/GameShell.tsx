@@ -12,7 +12,7 @@ interface GameShellProps {
 // Shared card shell used by all retro-mono game pages.
 // Renders the fullscreen wrapper, scanline overlay, card border, corner brackets,
 // and header. Pass <main> (or AnimatePresence) as children.
-export function GameShell({ title, onBack, badge, children }: GameShellProps) {
+export const GameShell = ({ title, onBack, badge, children }: GameShellProps) => {
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#232323] font-mono flex items-center justify-center p-0 sm:p-4 relative antialiased select-none">
       <div

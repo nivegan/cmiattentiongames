@@ -19,20 +19,47 @@ const HistoryPage = () => {
   const { isSignedIn, isLoaded } = useAuth();
   const [data, setData] = useState<HistoryResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (!isLoaded) return;
-    const deviceId = localStorage.getItem("meta_mind_global_device_id") ?? "";
-    fetchHistory(deviceId).then((result) => {
-      setData(result);
-      setLoading(false);
-    });
+    async function load() {
+      try {
+        const deviceId =
+          localStorage.getItem("meta_mind_global_device_id") ?? "";
+        const result = await fetchHistory(deviceId);
+        setData(result);
+      } catch {
+        setLoadError(true);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
   }, [isLoaded]);
 
   if (!isLoaded || loading) {
     return (
       <div className="min-h-screen bg-[#FAF6F0] font-mono flex items-center justify-center">
         <p className="text-[#232323]">Loading...</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-[#FAF6F0] font-mono flex items-center justify-center p-8">
+        <div className="text-center space-y-4">
+          <p className="text-xs font-bold tracking-widest text-[#8B2626] uppercase">
+            Failed to load history
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="text-xs font-bold underline text-[#232323]"
+          >
+            RETRY
+          </button>
+        </div>
       </div>
     );
   }
