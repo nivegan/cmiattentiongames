@@ -105,7 +105,7 @@ const getDailySeed = (dateStr: string): number => {
     hash = dateStr.charCodeAt(i) + ((hash << 5) - hash);
   }
   return Math.abs(Math.sin(hash)) % 1;
-}
+};
 
 // Returns a stable uint32 integer for use as a PRNG seed (mulberry32 requires
 // an integer — passing a float like 0.7341 would truncate to 0 via >>> 0,
@@ -117,7 +117,7 @@ const getDailySeedInt = (dateStr: string): number => {
     hash = (Math.imul(hash, 33) ^ dateStr.charCodeAt(i)) >>> 0;
   }
   return hash; // uint32
-}
+};
 
 const hslToHex = (h: number, s: number, l: number): string => {
   l /= 100;
@@ -130,7 +130,7 @@ const hslToHex = (h: number, s: number, l: number): string => {
       .padStart(2, "0");
   };
   return `#${f(0)}${f(8)}${f(4)}`;
-}
+};
 
 const generateSteadyGazeParams = (today: string) => {
   // Use the djb2 uint32 seed (same algorithm as the client) normalised to [0,1)
@@ -152,7 +152,7 @@ const generateSteadyGazeParams = (today: string) => {
     miss_deceleration_factor: 0.8,
     max_expansion_cap_seconds: 4.5,
   };
-}
+};
 
 const generateClearAirParams = (today: string) => {
   const seed = getDailySeed(today + "clear_air");
@@ -167,7 +167,7 @@ const generateClearAirParams = (today: string) => {
     bubble_acceleration_factor: 0.05,
     smudge_opacity_penalty: 0.65,
   };
-}
+};
 
 // ── Main Runtime Execution Export ──────────────────────────────────────────
 
@@ -267,6 +267,7 @@ Dynamic Entropy Value: ${Date.now()}-${Math.random()}.
 THEME VARIETY INSTRUCTIONS:
 Select an entirely random, creative, unique industry domain, scientific discovery sector, marine biology metric, astrophysics trend, historical era, or micro-economic dataset.
 CRITICAL ANTI-REPETITION FILTER: Do NOT focus on 'Mycology', 'Mushroom networks', 'Burj Khalifa', architectural building heights, or any previously generated configurations.
+Make sure the questions are not too niche or obscure, but also not too common or easily guessable. Aim for a balanced challenge that rewards genuine knowledge and reasoning.
 
 MANDATORY QUESTION STYLE:
 Every single question segment must consist of two steps:
