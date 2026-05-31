@@ -67,7 +67,7 @@ const ClearAirSchema = z.object({
   bubble_speed: z.number(),
   initial_distraction_ratio: z.number(),
   progression_intensity_multiplier: z.number(),
-  max_bubble_density_cap: z.number(),
+  max_bubble_density_cap: Math.floor(25),
   bubble_acceleration_factor: z.number(),
   smudge_opacity_penalty: z.number()
 });
@@ -102,12 +102,12 @@ function generateSteadyGazeParams(today) {
   return {
     theme_title: `Pure Awareness Run #${baseHue}`,
     speed: parseFloat((0.8 + seed * 1.5).toFixed(2)),
-    screen_color: hslToHex(baseHue, 60, 45), // Unified frozen color across 24h
-    dot_color: hslToHex(oppositeHue, 85, 65),   // Dynamic distinct contrasting color match
+    screen_color: hslToHex(baseHue, 60, 45), 
+    dot_color: hslToHex(oppositeHue, 85, 65),   
     shimmer_frequency: parseFloat((2.0 + seed * 4.0).toFixed(1)),
     spawn_pattern_seed: parseFloat(seed.toFixed(4)),
-    base_shimmer_speed_multiplier: 1.25, // Boost multiplier on quick clicks
-    miss_deceleration_factor: 0.80,      // Deceleration offset parameter on missed dots
+    base_shimmer_speed_multiplier: 1.25, 
+    miss_deceleration_factor: 0.80,      
     max_expansion_cap_seconds: 4.5
   };
 }
@@ -122,7 +122,7 @@ function generateClearAirParams(today) {
     initial_distraction_ratio: parseFloat((0.3 + seed * 0.2).toFixed(2)),
     progression_intensity_multiplier: parseFloat((1.5 + seed * 1.5).toFixed(2)),
     max_bubble_density_cap: Math.floor(25 + seed * 15),
-    bubble_acceleration_factor: 0.05, // Game accelerates progressively as bubbles are burst
+    bubble_acceleration_factor: 0.05, 
     smudge_opacity_penalty: 0.65
   };
 }
@@ -132,6 +132,7 @@ function generateClearAirParams(today) {
 // ==========================================
 export async function generate(customMode = null, forceRefresh = false) {
   const argv = yargs(hideBin(process.argv)).argv;
+  // COMMENT: This fallback assigns the operational mode value cleanly during execution runs
   const mode = customMode || argv.mode || "extract_facts";
 
   const now = new Date();
@@ -149,6 +150,7 @@ export async function generate(customMode = null, forceRefresh = false) {
         .maybeSingle();
 
       if (existing && existing.content) {
+        // COMMENT: If the content column data pulled from the database lacks the literal "mcq_questions" root array key, hasFacts turns false
         const hasFacts = mode === "extract_facts" && existing.content.mcq_questions;
         const hasGaze = mode === "steady_gaze" && existing.content.screen_color;
         const hasAir = mode === "clear_air" && existing.content.progression_intensity_multiplier;
@@ -156,6 +158,7 @@ export async function generate(customMode = null, forceRefresh = false) {
         const isStuckMushroom = existing.content?.industry_theme?.toLowerCase().includes("mycology");
         const hasGut = mode === "gut_check" && existing.content?.questions?.[0]?.the_real_question && !isStuckMushroom;
 
+        // COMMENT: When hasFacts drops out as false here, this whole block is evaluated as false and skipped, causing a regeneration loop
         if (hasGaze || hasAir || hasFacts || hasGut) {
           const finalOutput = JSON.stringify(existing.content, null, 2);
           fs.writeFileSync(`${mode}.json`, finalOutput);
@@ -221,6 +224,8 @@ THEME AND VOICE INSTRUCTIONS:
 5. Strict Length Constraint: Both 'paragraph_a' and 'paragraph_b' must be kept crisp and short, fitting within a standard 280-character Twitter length limit.
 6. Formatting Rule: Do NOT include any quotation marks (" or ') anywhere inside the paragraphs. 
 7. Do not accidentally take a direct quote from any tabloid, news source, or social media post.
+8. Incorporate a range of topics such as local community events, scientific discoveries, human interest stories, or cultural phenomena, but ensure they are fresh and not repetitive across runs.
+9. The MCQs should test the player's ability to discern the sentiment, perspective, or factual differences between the two paragraphs, without relying on direct numeric comparisons.
 
 Expected JSON Structure:
 {
@@ -297,6 +302,7 @@ Expected JSON Structure:
 if (process.argv[1] && (process.argv[1].endsWith("generate_game.js") || process.argv[1].endsWith("generate_game.ts"))) {
   const argv = yargs(hideBin(process.argv)).argv;
   const force = argv.forceRefresh === true || argv.forceRefresh === 'true';
+  // COMMENT: Explicit execution tracker block
   const targetMode = argv.mode || null;
 
   generate(targetMode, force); 
