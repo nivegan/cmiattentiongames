@@ -18,7 +18,7 @@ const getTodayIST = (): string => {
   return new Date(now.getTime() + 5.5 * 60 * 60 * 1000)
     .toISOString()
     .split("T")[0];
-}
+};
 
 // djb2 hash → deterministic uint32 from any string.
 // Returns an integer (not a float) because mulberry32 requires an integer seed.
@@ -31,7 +31,7 @@ const getDailySeed = (dateStr: string): number => {
     hash = (Math.imul(hash, 33) ^ dateStr.charCodeAt(i)) >>> 0;
   }
   return hash; // uint32
-}
+};
 
 const hslToHex = (h: number, s: number, l: number): string => {
   l /= 100;
@@ -44,7 +44,7 @@ const hslToHex = (h: number, s: number, l: number): string => {
       .padStart(2, "0");
   };
   return `#${f(0)}${f(8)}${f(4)}`;
-}
+};
 
 const computeGameData = () => {
   const today = getTodayIST();
@@ -64,7 +64,7 @@ const computeGameData = () => {
     miss_deceleration_factor: 0.8,
     max_expansion_cap_seconds: 4.5,
   };
-}
+};
 
 // ── Seeded PRNG — spawn positions and delays are deterministic per day ──
 
@@ -76,7 +76,7 @@ const mulberry32 = (seed: number): (() => number) => {
     t = (Math.imul(t ^ (t >>> 7), 61 | t) ^ t) >>> 0;
     return ((t ^ (t >>> 14)) >>> 0) / 0x100000000;
   };
-}
+};
 
 // ── Types ──
 
@@ -491,7 +491,7 @@ export default function SteadyGazePage() {
                     animate={
                       i < displayMisses
                         ? { scale: [1, 1.5, 1], backgroundColor: "#8B2626" }
-                        : { scale: 1, backgroundColor: "transparent" }
+                        : { scale: 1, backgroundColor: "rgba(0, 0, 0, 0)" }
                     }
                     transition={{ duration: 0.25, ease: "easeOut" }}
                     className="w-3 h-3 rounded-full border"
