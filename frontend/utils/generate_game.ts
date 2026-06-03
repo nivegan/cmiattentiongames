@@ -107,18 +107,6 @@ const getDailySeed = (dateStr: string): number => {
   return Math.abs(Math.sin(hash)) % 1;
 };
 
-// Returns a stable uint32 integer for use as a PRNG seed (mulberry32 requires
-// an integer — passing a float like 0.7341 would truncate to 0 via >>> 0,
-// making every day's spawn sequence identical). Matches the client-side
-// getDailySeed in steady_gaze/page.tsx exactly.
-const getDailySeedInt = (dateStr: string): number => {
-  let hash = 5381;
-  for (let i = 0; i < dateStr.length; i++) {
-    hash = (Math.imul(hash, 33) ^ dateStr.charCodeAt(i)) >>> 0;
-  }
-  return hash; // uint32
-};
-
 const hslToHex = (h: number, s: number, l: number): string => {
   l /= 100;
   const a = (s * Math.min(l, 1 - l)) / 100;
@@ -133,12 +121,8 @@ const hslToHex = (h: number, s: number, l: number): string => {
 };
 
 const generateSteadyGazeParams = (today: string) => {
-  // Use the djb2 uint32 seed (same algorithm as the client) normalised to [0,1)
-  // so the stored visual params match what the client actually renders.
-  const seed = getDailySeedInt(today + "steady_gaze") / 0x100000000;
+  const seed = getDailySeed(today + "steady_gaze");
   const baseHue = Math.floor(seed * 360);
-  // Complementary colour (opposite on the colour wheel) ensures strong contrast
-  // between background and dot without manual colour curation.
   const oppositeHue = (baseHue + 180) % 360;
 
   return {
@@ -147,7 +131,7 @@ const generateSteadyGazeParams = (today: string) => {
     screen_color: hslToHex(baseHue, 60, 45),
     dot_color: hslToHex(oppositeHue, 85, 65),
     shimmer_frequency: parseFloat((2.0 + seed * 4.0).toFixed(1)),
-    spawn_pattern_seed: getDailySeedInt(today + "steady_gaze"),
+    spawn_pattern_seed: parseFloat(seed.toFixed(4)),
     base_shimmer_speed_multiplier: 1.25,
     miss_deceleration_factor: 0.8,
     max_expansion_cap_seconds: 4.5,
@@ -186,14 +170,8 @@ const generate = async (
     "EXTRACT_THE_FACTS") as GameMode;
 
   const now = new Date();
-  // Hard-code IST offset (+5:30) so the cache key always matches the IST
-  // day boundary used by checkHasPlayedToday / getCurrentDayRange.ts.
-  // getTimezoneOffset() would return 0 on a UTC server, giving the wrong date
-  // for 5.5 hours after each IST midnight.
-  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-  const today = new Date(now.getTime() + IST_OFFSET_MS)
-    .toISOString()
-    .split("T")[0];
+  const offset = now.getTimezoneOffset() * 60000;
+  const today = new Date(now.getTime() - offset).toISOString().split("T")[0];
   const todayDate = new Date(`${today}T00:00:00.000Z`);
 
   try {
@@ -267,7 +245,6 @@ Dynamic Entropy Value: ${Date.now()}-${Math.random()}.
 THEME VARIETY INSTRUCTIONS:
 Select an entirely random, creative, unique industry domain, scientific discovery sector, marine biology metric, astrophysics trend, historical era, or micro-economic dataset.
 CRITICAL ANTI-REPETITION FILTER: Do NOT focus on 'Mycology', 'Mushroom networks', 'Burj Khalifa', architectural building heights, or any previously generated configurations.
-Make sure the questions are not too niche or obscure, but also not too common or easily guessable. Aim for a balanced challenge that rewards genuine knowledge and reasoning.
 
 MANDATORY QUESTION STYLE:
 Every single question segment must consist of two steps:

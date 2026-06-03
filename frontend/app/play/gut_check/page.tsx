@@ -175,7 +175,12 @@ const GutCheckPage = () => {
 
     const roundCount = itemsList.length;
     if (roundCount === 0) {
-      return { overallScore: 0, avgConfidence: 0, avgAccuracy: 0, breakdowns: [] };
+      return {
+        overallScore: 0,
+        avgConfidence: 0,
+        avgAccuracy: 0,
+        breakdowns: [],
+      };
     }
     const averageConfidence = Math.round(accumulatedConfidence / roundCount);
     const averageAccuracy = Math.round(accumulatedAccuracy / roundCount);
@@ -346,11 +351,6 @@ const GutCheckPage = () => {
         {/* CONFIDENCE CHECK PHASE */}
         {phase === "CONFIDENCE_CHECK" && (
           <div className="space-y-6 animate-in fade-in duration-200">
-            <div className="text-center">
-              <h2 className="text-[11px] font-black tracking-widest text-[#8B2626] uppercase">
-                CONFIDENCE CHECK
-              </h2>
-            </div>
             <div className="bg-[#FAF6F0] border border-[#232323] p-5 shadow-[4px_4px_0px_#232323] outline-double outline-4 outline-[#FAF6F0] text-center space-y-2">
               <p className="text-xs text-[#232323]/80 font-medium">
                 How confident are you in your answer?
