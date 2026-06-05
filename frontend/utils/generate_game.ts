@@ -1,35 +1,60 @@
+// generate_game.ts
+// The single entry point for all game content generation.
+//
+// HOW IT WORKS (for each call to generate()):
+//   1. Check the kalari_games DB table for a cached row matching (mode, today).
+//      If valid cached content exists, return it immediately — Gemini is not called.
+//   2. For STEADY_GAZE and CLEAR_THE_AIR, generate parameters algorithmically.
+//   3. For GUT_CHECK and EXTRACT_THE_FACTS, call the Gemini API with a structured
+//      prompt, then validate the returned JSON with Zod schemas.
+//   4. Upsert the generated content into kalari_games for future cache hits.
+//
+// This file also works as a CLI script (for manual/cron generation):
+//   npx ts-node utils/generate_game.ts --mode GUT_CHECK
+// That's why yargs (CLI argument parser) and dotenv are imported here.
+
 import { z } from "zod";
-import yargs from "yargs";
-import { hideBin } from "yargs/helpers";
+import yargs from "yargs";             // CLI argument parser — used only when run as a script
+import { hideBin } from "yargs/helpers"; // strips "node script.ts" from process.argv
 import dotenv from "dotenv";
 import { prisma } from "./prismaInit";
 
-// No-op in the Next.js runtime (env vars are loaded by the framework), but
-// required when this file is invoked directly as a CLI script.
+// No-op in the Next.js runtime (the framework loads .env.local automatically),
+// but required when this file is executed directly as a CLI script.
 dotenv.config();
 
 const { GOOGLE_GENERATIVE_AI_API_KEY } = process.env;
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export type GameMode =
+// The canonical identifier for every game mode. Must exactly match the Prisma
+// GameType enum in prisma/schema.prisma. Use SCREAMING_SNAKE_CASE.
+type GameMode =
   | "GUT_CHECK"
   | "EXTRACT_THE_FACTS"
   | "STEADY_GAZE"
   | "CLEAR_THE_AIR"
   | "READ_BETWEEN_DESIGNS"
   | "MENTAL_REFLEX";
-export type GutCheckGame = z.infer<typeof GutCheckSchema>;
-export type ExtractFactsGame = z.infer<typeof ExtractFactsSchema>;
-export type SteadyGazeGame = z.infer<typeof SteadyGazeSchema>;
-export type ClearAirGame = z.infer<typeof ClearAirSchema>;
-export type GameResult =
+
+// z.infer<typeof Schema> extracts the TypeScript type that the Zod schema
+// describes. This way the type and the validation logic can't get out of sync —
+// the type IS the schema, automatically.
+type GutCheckGame = z.infer<typeof GutCheckSchema>;
+type ExtractFactsGame = z.infer<typeof ExtractFactsSchema>;
+type SteadyGazeGame = z.infer<typeof SteadyGazeSchema>;
+type ClearAirGame = z.infer<typeof ClearAirSchema>;
+// Union type: generate() can return any of the four game content shapes
+type GameResult =
   | GutCheckGame
   | ExtractFactsGame
   | SteadyGazeGame
   | ClearAirGame;
 
 // ── Schemas ────────────────────────────────────────────────────────────────
+// Zod schemas serve two purposes:
+//   1. Runtime validation — throw a descriptive error if Gemini returns wrong data
+//   2. Type inference — the TypeScript types above are derived from these schemas
 
 const GutCheckSchema = z.object({
   industry_theme: z.string(),
@@ -37,14 +62,16 @@ const GutCheckSchema = z.object({
     .array(
       z.object({
         anchor_statement: z.string(),
-        // Gemini returns booleans as string literals ("true"/"false") even when
-        // the response MIME type is application/json — preprocess coerces them.
+        // GEMINI STRING COERCION: Gemini returns boolean fields as the string
+        // literals "true" or "false" even when the response MIME type is
+        // application/json. z.preprocess() transforms the raw value BEFORE Zod
+        // validates it, converting "true"/"false" strings to actual booleans.
         is_anchor_true: z.preprocess((val) => {
           if (typeof val === "string") return val.toLowerCase() === "true";
           return Boolean(val);
         }, z.boolean()),
         the_real_question: z.string(),
-        // Same reason as is_anchor_true — numbers arrive as strings.
+        // Same coercion as is_anchor_true — numeric fields also arrive as strings.
         the_real_number: z.preprocess(
           (val) => parseFloat(val as string),
           z.number(),
@@ -53,31 +80,34 @@ const GutCheckSchema = z.object({
         difficulty_level: z.string(),
       }),
     )
-    .length(3),
+    .length(3), // exactly 3 questions per game
 });
 
 const ExtractFactsSchema = z.object({
   topic: z.string(),
-  paragraph_a: z.string(),
-  paragraph_b: z.string(),
+  paragraph_a: z.string(),  // factual narrative
+  paragraph_b: z.string(),  // spin/speculative narrative
   mcq_questions: z
     .array(
       z.object({
         question: z.string(),
-        options: z.array(z.string()).length(4),
+        options: z.array(z.string()).length(4), // exactly 4 answer options
+        // correct_answer_index arrives as a string like "2" from Gemini — coerce to int
         correct_answer_index: z.preprocess(
           (val) => parseInt(val as string, 10),
-          z.number().min(0).max(3),
+          z.number().min(0).max(3), // must be a valid 0–3 index
         ),
       }),
     )
-    .length(3),
+    .length(3), // exactly 3 MCQ questions
 });
 
+// These schemas are used to validate algorithmically-generated parameters
+// (not Gemini output). They ensure the generation functions produce well-formed data.
 const SteadyGazeSchema = z.object({
   theme_title: z.string(),
   speed: z.number(),
-  screen_color: z.string().regex(/^#[0-9A-F]{6}$/i),
+  screen_color: z.string().regex(/^#[0-9A-F]{6}$/i), // must be a valid 6-digit hex colour
   dot_color: z.string().regex(/^#[0-9A-F]{6}$/i),
   shimmer_frequency: z.number(),
   spawn_pattern_seed: z.number(),
@@ -98,32 +128,43 @@ const ClearAirSchema = z.object({
 
 // ── Math Core & Algorithmic Helper Functions ───────────────────────────────
 
-// Returns a stable [0, 1) float for use as a scalar seed (colors, speeds, etc.).
+// Returns a stable float in [0, 1) derived from a date string.
+// This is a simpler hash than the djb2 in seedRng.ts — it produces a float
+// (not a uint32) which is sufficient for scalar parameters like colors and speeds
+// (where entropy requirements are low), but NOT suitable as a mulberry32 seed.
 const getDailySeed = (dateStr: string): number => {
   let hash = 0;
   for (let i = 0; i < dateStr.length; i++) {
+    // << 5 shifts hash left by 5 bits (equivalent to × 32); − hash = × 31 total.
+    // This is a simple integer hash function often called "Java's String.hashCode".
     hash = dateStr.charCodeAt(i) + ((hash << 5) - hash);
   }
+  // Math.sin introduces non-linearity to spread the values; % 1 takes the fractional part.
   return Math.abs(Math.sin(hash)) % 1;
 };
 
+// Converts HSL colour values to a CSS hex string like "#FF0033".
+// Standard colour-math algorithm; the same function exists in seedRng.ts for
+// client-side use — the server-side version here is separate by design.
 const hslToHex = (h: number, s: number, l: number): string => {
   l /= 100;
   const a = (s * Math.min(l, 1 - l)) / 100;
   const f = (n: number) => {
     const k = (n + h / 30) % 12;
     const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(255 * color)
-      .toString(16)
-      .padStart(2, "0");
+    return Math.round(255 * color).toString(16).padStart(2, "0");
   };
   return `#${f(0)}${f(8)}${f(4)}`;
 };
 
+// Generates Steady Gaze parameters from today's date. These are stored in
+// kalari_games for caching but the client-side page.tsx recomputes them itself
+// (since Steady Gaze requires no server round-trip). The DB row is kept for
+// consistency and historical auditing.
 const generateSteadyGazeParams = (today: string) => {
   const seed = getDailySeed(today + "steady_gaze");
   const baseHue = Math.floor(seed * 360);
-  const oppositeHue = (baseHue + 180) % 360;
+  const oppositeHue = (baseHue + 180) % 360; // complementary hue (not used by the page)
 
   return {
     theme_title: `Pure Awareness Run #${baseHue}`,
@@ -138,6 +179,7 @@ const generateSteadyGazeParams = (today: string) => {
   };
 };
 
+// Same purpose as generateSteadyGazeParams but for Clear the Air.
 const generateClearAirParams = (today: string) => {
   const seed = getDailySeed(today + "clear_air");
   const variantId = Math.floor(seed * 1000);
@@ -153,32 +195,42 @@ const generateClearAirParams = (today: string) => {
   };
 };
 
-// ── Main Runtime Execution Export ──────────────────────────────────────────
+// ── Main generate() function ───────────────────────────────────────────────
 
 const generate = async (
-  customMode: GameMode | null = null,
-  forceRefresh: boolean = false,
+  customMode: GameMode | null = null, // which game to generate (null = use CLI arg)
+  forceRefresh: boolean = false,       // bypass the DB cache and regenerate fresh content
 ): Promise<GameResult> => {
-  // argv is parsed for CLI compatibility only. Server actions always supply
-  // customMode, so argv.mode is never consulted in the web runtime.
+  // yargs parses --mode and --forceRefresh from process.argv. In the web
+  // runtime, server actions always pass customMode directly, so this is only
+  // consulted when the file is run as a CLI script.
   const argv = yargs(hideBin(process.argv)).argv as {
     mode?: string;
     forceRefresh?: boolean | string;
   };
-  const mode: GameMode = (customMode ||
-    argv.mode ||
-    "EXTRACT_THE_FACTS") as GameMode;
+  // Priority: function argument > CLI flag > default to EXTRACT_THE_FACTS
+  const mode: GameMode = (customMode || argv.mode || "EXTRACT_THE_FACTS") as GameMode;
 
   const now = new Date();
+  // getTimezoneOffset() returns the local UTC offset in minutes (negative for
+  // UTC+ zones). Multiplying by 60000 converts to milliseconds.
+  // Subtracting this from now.getTime() effectively converts the timestamp
+  // to "local midnight UTC" — i.e., today's date string in the server's local tz.
   const offset = now.getTimezoneOffset() * 60000;
   const today = new Date(now.getTime() - offset).toISOString().split("T")[0];
+  // Use UTC midnight as the scheduled_for value so the unique key (mode, scheduled_for)
+  // is consistent regardless of server timezone.
   const todayDate = new Date(`${today}T00:00:00.000Z`);
 
   try {
-    // Check kalari_games for a cached row before calling Gemini.
-    // We validate the cached content structurally rather than trusting it
-    // blindly — previous runs may have stored malformed data (e.g. the
-    // mycology bug where Gemini ignored the anti-repetition filter).
+    // ── Step 1: Check the DB cache ────────────────────────────────────────
+    // kalari_games has a unique constraint on (mode, scheduled_for).
+    // If a row exists for today, return it directly — no Gemini call needed.
+    //
+    // We do a lightweight structural validation on the cached content rather
+    // than trusting it blindly, because early Gemini runs stored malformed data
+    // (the "mycology bug": Gemini ignored the anti-repetition filter and kept
+    // generating mushroom-themed Gut Check content despite being told not to).
     if (!forceRefresh) {
       const existing = await prisma.kalari_games.findUnique({
         where: {
@@ -187,10 +239,11 @@ const generate = async (
             scheduled_for: todayDate,
           },
         },
-        select: { content: true },
+        select: { content: true }, // only fetch the content column, not the whole row
       });
 
       if (existing?.content) {
+        // Cast to a partial type so we can probe for expected fields
         const content = existing.content as {
           industry_theme?: string;
           questions?: Array<{ the_real_question?: unknown }>;
@@ -199,37 +252,41 @@ const generate = async (
           progression_intensity_multiplier?: number;
         };
 
+        // Check that the cached content has at least one key field that
+        // indicates it is structurally complete.
         const hasFacts = mode === "EXTRACT_THE_FACTS" && content.mcq_questions;
-        const hasGaze = mode === "STEADY_GAZE" && content.screen_color;
-        const hasAir =
-          mode === "CLEAR_THE_AIR" && content.progression_intensity_multiplier;
+        const hasGaze  = mode === "STEADY_GAZE" && content.screen_color;
+        const hasAir   = mode === "CLEAR_THE_AIR" && content.progression_intensity_multiplier;
 
-        // Reject any cached GUT_CHECK that is about mycology — Gemini repeatedly
-        // generated mushroom-themed content early on despite the anti-repetition
-        // filter, so those rows were manually invalidated but left in the DB.
-        const isStuckMushroom = content?.industry_theme
-          ?.toLowerCase()
-          .includes("mycology");
+        // Reject cached GUT_CHECK rows that are about mycology. Gemini repeatedly
+        // generated mushroom-themed content early in the project despite the
+        // explicit anti-repetition filter. Those rows were left in the DB (not
+        // deleted) but we skip them here so a fresh non-mycology row is generated.
+        const isStuckMushroom = content?.industry_theme?.toLowerCase().includes("mycology");
         const hasGut =
           mode === "GUT_CHECK" &&
           content?.questions?.[0]?.hasOwnProperty("the_real_question") &&
           !isStuckMushroom;
 
         if (hasGaze || hasAir || hasFacts || hasGut) {
-          return content as GameResult;
+          return content as GameResult; // cache hit — return early, skip Gemini
         }
       }
     }
 
+    // ── Step 2: Generate fresh content ───────────────────────────────────
     let validated: GameResult;
 
     if (mode === "STEADY_GAZE") {
+      // Algorithmic: no API call needed
       const rawParams = generateSteadyGazeParams(today);
-      validated = SteadyGazeSchema.parse(rawParams);
+      validated = SteadyGazeSchema.parse(rawParams); // validate before storing
     } else if (mode === "CLEAR_THE_AIR") {
+      // Algorithmic: no API call needed
       const rawParams = generateClearAirParams(today);
       validated = ClearAirSchema.parse(rawParams);
     } else {
+      // AI-generated (GUT_CHECK or EXTRACT_THE_FACTS): call Gemini
       if (!GOOGLE_GENERATIVE_AI_API_KEY) {
         throw new Error(
           "Missing GOOGLE_GENERATIVE_AI_API_KEY environment variable.",
@@ -294,6 +351,10 @@ Expected JSON Structure:
 }`;
       }
 
+      // Direct REST call to the Gemini API. responseMimeType: "application/json"
+      // tells Gemini to return JSON, but in practice it still encodes booleans
+      // and numbers as strings — hence the Zod preprocess() coercions above.
+      // temperature: 1.0 maximises variety so each day's content is different.
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`;
       const response = await fetch(url, {
         method: "POST",
@@ -308,11 +369,17 @@ Expected JSON Structure:
       });
 
       const data = await response.json();
+      // Navigate the Gemini response structure to extract the generated text.
+      // ?. is optional chaining — returns undefined instead of throwing if any
+      // intermediate field is missing (e.g. if Gemini returns an error response).
       const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text as
         | string
         | undefined;
       if (!rawText) throw new Error("API returned empty candidates.");
 
+      // Parse the JSON string into an object, then validate it with the Zod schema.
+      // If the shape doesn't match (missing fields, wrong types), Zod throws a
+      // ZodError with a detailed message — caught below.
       const parsed: unknown = JSON.parse(rawText);
       validated =
         mode === "GUT_CHECK"
@@ -320,10 +387,11 @@ Expected JSON Structure:
           : ExtractFactsSchema.parse(parsed);
     }
 
-    // Upsert rather than insert so that forceRefresh runs (or a race between
-    // two simultaneous cold requests) don't create duplicate rows for the same
-    // (mode, scheduled_for) pair.
-    let dbTopic = mode as string;
+    // ── Step 3: Upsert into the DB cache ─────────────────────────────────
+    // upsert = insert if not exists, update if exists. Using upsert (not insert)
+    // means a forceRefresh run or a race between two simultaneous cold requests
+    // won't create duplicate rows (which would violate the unique constraint).
+    let dbTopic = mode as string; // default topic label = the mode name
     if (mode === "GUT_CHECK")
       dbTopic = (validated as GutCheckGame).industry_theme;
     if (mode === "EXTRACT_THE_FACTS")
@@ -354,13 +422,19 @@ Expected JSON Structure:
     return validated;
   } catch (err) {
     console.error("🛑 SCRIPT ERROR:", (err as Error).message);
+    // ZodError has a detailed `issues` array describing exactly which fields
+    // failed validation and why — very useful for debugging Gemini output changes.
     if (err instanceof z.ZodError) {
       console.error("Validation Details:", JSON.stringify(err.issues, null, 2));
     }
-    throw err;
+    throw err; // re-throw so the calling server action can return an error response
   } finally {
+    // Always disconnect from the DB, even if an error occurred. This ensures
+    // the connection pool is released when running as a CLI script.
+    // In the web runtime this is a no-op (Next.js manages the connection lifecycle).
     await prisma.$disconnect();
   }
 };
 
 export { generate };
+export type { GameMode, GutCheckGame, ExtractFactsGame, SteadyGazeGame, ClearAirGame, GameResult };

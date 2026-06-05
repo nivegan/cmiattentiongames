@@ -1,16 +1,37 @@
 "use client";
+// gut_check/page.tsx
+// The Gut Check game page — a multi-round calibration game where players:
+//   1. Read an anchor statement (yes/no numeric claim)
+//   2. Answer the real question (guess an exact number)
+//   3. Rate their own confidence in that answer (0–100%)
+// At the end, the game scores how well their confidence *matched* their actual accuracy.
+//
+// GAME PHASES (AppPhase):
+//   WELCOME         → intro screen with theme info
+//   ANCHOR          → yes/no baseline claim for the current round
+//   REAL_QUESTION   → numeric input for the real question
+//   CONFIDENCE_CHECK → slider: how confident are you?
+//   METRICS         → dashboard showing calibration scores before saving
+//   RESULTS         → final breakdown with correct answers revealed
+//
+// SCORING:
+//   Accuracy%     = Max(0, Min(100, round((1 − |true−guess| / |true|) × 100)))
+//   Calibration   = Max(0, 100 − |Accuracy% − Confidence%|)   ← rewards alignment
+//   Round score   = Accuracy% × 0.5 + Calibration × 0.5
+//   Overall score = average of all round scores
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { fetchServerGameData } from "./actions";
 import { saveUserGameStat } from "@/utils/saveUserGameStat";
-import { GutCheckGame } from "@/utils/generate_game";
+import type { GutCheckGame } from "@/utils/generate_game";
 import { useRouter } from "next/navigation";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { GameShell } from "@/components/GameShell";
 import { GameLoadingScreen } from "@/components/GameLoadingScreen";
 import { GameErrorScreen } from "@/components/GameErrorScreen";
 
+// All the possible game phases — drives which UI section is shown
 type AppPhase =
   | "WELCOME"
   | "ANCHOR"
@@ -19,57 +40,75 @@ type AppPhase =
   | "METRICS"
   | "RESULTS";
 
+// Stores the player's responses for a single round (all three steps)
 interface RoundResponse {
-  anchorGuess: boolean;
-  realGuess: number;
-  confidence: number;
+  anchorGuess: boolean; // did they think the anchor statement was true?
+  realGuess: number;    // their numeric answer to the real question
+  confidence: number;   // their self-rated confidence (0–100)
 }
 
+// The computed breakdown for a single round, used in the METRICS and RESULTS phases
 interface CalibrationItemBreakdown {
   roundNum: number;
   confidence: number;
-  accuracy: number;
-  score: number;
+  accuracy: number;    // how close their guess was to the actual value (0–100)
+  score: number;       // final round score combining accuracy + calibration
   questionText: string;
   unit: string;
-  guess: number;
-  actual: number;
+  guess: number;       // what they entered
+  actual: number;      // the real answer from the AI-generated game data
 }
 
+// Summary stats computed from all rounds
 interface PerformanceMetrics {
   overallScore: number;
   avgConfidence: number;
   avgAccuracy: number;
-  breakdowns: CalibrationItemBreakdown[];
+  breakdowns: CalibrationItemBreakdown[]; // one entry per round
 }
 
 const GutCheckPage = () => {
-  const router = useRouter();
+  const router = useRouter(); // for programmatic navigation (redirect to home)
+
+  // AI-generated game content from the server (questions, theme, answers)
   const [gameData, setGameData] = useState<GutCheckGame | null>(null);
+  // true while the server action is fetching game data
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  // true while the score is being saved to the DB (prevents double-submit)
   const [isSubmittingDb, setIsSubmittingDb] = useState<boolean>(false);
 
+  // Anonymous device ID from localStorage (used as identity if not signed in)
   const deviceIdRef = useDeviceId();
 
+  // Which screen is currently shown
   const [phase, setPhase] = useState<AppPhase>("WELCOME");
+  // Which question (0-indexed) the player is currently on
   const [currentRoundIndex, setCurrentRoundIndex] = useState<number>(0);
+  // Dictionary mapping round index → partial response for that round.
+  // Partial<> means not all fields are required — they're filled in one by one
+  // as the player moves through ANCHOR → REAL_QUESTION → CONFIDENCE_CHECK.
   const [roundResponses, setRoundResponses] = useState<
     Record<number, Partial<RoundResponse>>
   >({});
 
+  // Controlled input value for the numeric answer field
   const [numericInput, setNumericInput] = useState<string>("");
+  // Controlled value for the confidence slider (0–100, defaults to 50)
   const [confidenceInput, setConfidenceInput] = useState<number>(50);
 
+  // Ref to the scrollable main content area — used to scroll to top on phase change
   const containerScrollRef = useRef<HTMLDivElement>(null);
 
+  // Load game data once on mount. Checks the daily lock and fetches (or returns
+  // cached) AI-generated questions. Redirects home if already played today.
   useEffect(() => {
-    async function loadGame() {
+    const loadGame = async () => {
       setIsLoading(true);
       try {
         const response = await fetchServerGameData(deviceIdRef.current);
         if (!response.success) {
           if (response.error === "ALREADY_PLAYED") {
-            router.push("/");
+            router.push("/"); // already played today — send home
             return;
           }
         }
@@ -78,14 +117,15 @@ const GutCheckPage = () => {
         }
         setIsLoading(false);
       } catch {
+        // On unexpected error, stop loading so the error state can be shown
         setIsLoading(false);
       }
-    }
+    };
     loadGame();
-  }, [deviceIdRef, router]);
+  }, [deviceIdRef, router]); // deviceIdRef is a stable ref, so this only runs once
 
-  // Scroll back to the top whenever the phase or round changes so the user
-  // never lands mid-page on a new question.
+  // Scroll back to the top of the card whenever the phase or round changes,
+  // so the user never lands mid-page when a new question appears.
   useEffect(() => {
     if (containerScrollRef.current) {
       containerScrollRef.current.scrollTop = 0;
@@ -96,24 +136,36 @@ const GutCheckPage = () => {
     router.push("/");
   };
 
+  // Total number of rounds in this session (from the AI-generated data, usually 3)
   const totalRounds = gameData?.questions?.length ?? 3;
+  // The currently active question object (switches as currentRoundIndex advances)
   const activeQuestion = gameData?.questions?.[currentRoundIndex];
 
-  // Merges partial fields into the current round's response record. Called
-  // separately for anchorGuess, realGuess, and confidence across different
-  // phases so each update doesn't overwrite the others.
+  // Merges partial fields into the current round's response record without
+  // overwriting already-saved fields. Called once per phase:
+  //   ANCHOR phase       → saves anchorGuess
+  //   REAL_QUESTION phase → saves realGuess
+  //   CONFIDENCE_CHECK   → saves confidence
   const saveCurrentRoundSlice = (updatedFields: Partial<RoundResponse>) => {
     setRoundResponses((prev) => ({
       ...prev,
+      // Spread existing fields for this round, then overwrite with new fields
       [currentRoundIndex]: { ...prev[currentRoundIndex], ...updatedFields },
     }));
   };
 
-  // Scoring formula (runs only when roundResponses changes, i.e. after each round):
-  //   Accuracy%   = Max(0, Min(100, round((1 - |true - guess| / true) * 100)))
-  //   Calibration = Max(0, 100 - |Accuracy% - Confidence%|)  ← reward alignment
-  //   Round score = Accuracy% * 0.5 + Calibration * 0.5
-  //   Overall     = average of all round scores
+  // Computes performance metrics for all rounds. Wrapped in useMemo so it only
+  // recalculates when the player's responses (or game data) actually change —
+  // not on every render. This is important because it runs inside the render
+  // and could be slow if called unnecessarily.
+  //
+  // SCORING FORMULA:
+  //   Accuracy% = Max(0, Min(100, round((1 − |true−guess| / |true|) × 100)))
+  //     → how close was the guess? 100 = exact, 0 = wildly off
+  //   Calibration = Max(0, 100 − |Accuracy% − Confidence%|)
+  //     → how well did confidence match accuracy? 100 = perfectly aligned
+  //   Round score = Accuracy% × 0.5 + Calibration × 0.5
+  //   Overall = average of all round scores
   const calculatedPerformanceMetrics = useMemo<PerformanceMetrics>(() => {
     if (!gameData || !gameData.questions) {
       return {
@@ -196,6 +248,9 @@ const GutCheckPage = () => {
     };
   }, [gameData, roundResponses]);
 
+  // Called when the player clicks "VIEW ANSWERS" on the METRICS screen.
+  // Saves the overall score to the DB, then transitions to RESULTS.
+  // setIsSubmittingDb(true) disables the button to prevent double-clicking.
   const handleProcessAndSyncScores = async () => {
     setIsSubmittingDb(true);
     try {
@@ -223,7 +278,9 @@ const GutCheckPage = () => {
     }
   };
 
+  // Still waiting for the server to return game data → show loading spinner
   if (isLoading) return <GameLoadingScreen />;
+  // Game data arrived but is missing or empty → show error screen
   if (!gameData || !gameData.questions || gameData.questions.length === 0)
     return <GameErrorScreen />;
 

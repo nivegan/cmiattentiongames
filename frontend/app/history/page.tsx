@@ -1,11 +1,28 @@
 "use client";
+// history/page.tsx
+// Displays the user's complete game history: a list of past scores, the current
+// streak, and a conversion banner prompting anonymous users to create an account.
+//
+// "use client" is required because this page reads from localStorage (to get the
+// anonymous device ID) and uses Clerk's useAuth() hook — both browser-only APIs.
+//
+// DATA FLOW:
+//   1. On mount, wait for Clerk to finish loading (isLoaded)
+//   2. Read the device ID from localStorage
+//   3. Call fetchHistory(deviceId) server action — it returns all past scores + streak
+//   4. Render the list; show conversion banner if user is anonymous and has entries
 
 import { useAuth, SignUpButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { fetchHistory, HistoryResult } from "./actions";
+import { fetchHistory } from "./actions";
+import type { HistoryResult } from "./actions";
 import type { GameMode } from "@/utils/generate_game";
 
+// Maps each game mode string to its human-readable display name.
+// Partial<Record<...>> means not every GameMode key is required — modes without
+// a label yet (READ_BETWEEN_DESIGNS, MENTAL_REFLEX) would fall through to the
+// raw game_type_id string or "Unknown" in the render below.
 const GAME_LABELS: Partial<Record<GameMode, string>> = {
   GUT_CHECK: "Gut Check",
   EXTRACT_THE_FACTS: "Extract Facts",
@@ -16,15 +33,27 @@ const GAME_LABELS: Partial<Record<GameMode, string>> = {
 };
 
 const HistoryPage = () => {
+  // isLoaded: true once Clerk has finished checking for an active session
+  // isSignedIn: true if the user is authenticated
   const { isSignedIn, isLoaded } = useAuth();
+
+  // data: the entries + streak returned by fetchHistory (null until loaded)
   const [data, setData] = useState<HistoryResult | null>(null);
+  // loading: true while the fetchHistory call is in-flight
   const [loading, setLoading] = useState(true);
+  // loadError: true if fetchHistory threw an unexpected error
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
+    // Wait until Clerk has determined the session state before fetching.
+    // If we fetch before isLoaded, userId in the server action may be null
+    // even for a signed-in user (Clerk hasn't hydrated yet).
     if (!isLoaded) return;
-    async function load() {
+
+    const load = async () => {
       try {
+        // localStorage is browser-only — safe inside useEffect.
+        // ?? "" falls back to an empty string if the key doesn't exist yet.
         const deviceId =
           localStorage.getItem("meta_mind_global_device_id") ?? "";
         const result = await fetchHistory(deviceId);
@@ -32,12 +61,15 @@ const HistoryPage = () => {
       } catch {
         setLoadError(true);
       } finally {
+        // Always set loading to false so the loading spinner goes away,
+        // even if the fetch failed.
         setLoading(false);
       }
-    }
+    };
     load();
-  }, [isLoaded]);
+  }, [isLoaded]); // re-run if isLoaded changes (typically only once: false → true)
 
+  // Show loading spinner while Clerk or fetchHistory is still in progress
   if (!isLoaded || loading) {
     return (
       <div className="min-h-screen bg-[#FAF6F0] font-mono flex items-center justify-center">
@@ -46,6 +78,8 @@ const HistoryPage = () => {
     );
   }
 
+  // Show an inline retry UI if the fetch failed (instead of a full GameErrorScreen,
+  // since this page is outside the game card layout)
   if (loadError) {
     return (
       <div className="min-h-screen bg-[#FAF6F0] font-mono flex items-center justify-center p-8">
@@ -64,12 +98,15 @@ const HistoryPage = () => {
     );
   }
 
+  // Safely unwrap data with fallback defaults. data should always be non-null
+  // here (loading is false and no error), but ?? guards against unexpected null.
   const entries = data?.entries ?? [];
   const streak = data?.streak ?? 0;
 
   return (
     <div className="min-h-screen bg-[#FAF6F0] font-mono p-8">
-      {/* Persistent conversion banner — anonymous users with history */}
+      {/* Conversion banner — shown only to anonymous users who already have entries.
+          If they're already signed in, or have no history yet, this is hidden. */}
       {!isSignedIn && entries.length > 0 && (
         <div className="mb-6 border-2 border-[#8B2626] shadow-[4px_4px_0px_#8B2626] bg-white p-4 flex items-center justify-between gap-4 flex-wrap">
           <p className="text-[#232323] text-sm">
@@ -126,11 +163,14 @@ const HistoryPage = () => {
             >
               <div>
                 <p className="text-[#232323] font-bold uppercase tracking-wider text-sm">
+                  {/* Look up the human-readable label; fall back to the raw
+                      game_type_id string if unlabelled, or "Unknown" if null */}
                   {(entry.game_type_id && GAME_LABELS[entry.game_type_id]) ??
                     entry.game_type_id ??
                     "Unknown"}
                 </p>
                 <p className="text-[#232323] opacity-60 text-xs mt-0.5">
+                  {/* Format the UTC ISO string in IST for display */}
                   {new Date(entry.created_at).toLocaleDateString("en-IN", {
                     timeZone: "Asia/Kolkata",
                     day: "numeric",

@@ -1,58 +1,84 @@
 "use client";
+// extract_facts/page.tsx
+// The Extract Facts game — a multi-phase media literacy exercise where players:
+//   1. Read two narratives about the same event (A = factual, B = spin)
+//   2. Answer 3 MCQs testing their ability to distinguish fact from framing
+//   3. Write a personal takeaway (≥10 words) reflecting on what they learned
+//   4. See their metric breakdown
+//
+// GAME PHASES (AppPhase):
+//   INTRO    → read both narratives side by side
+//   QUIZ     → answer 3 multiple-choice questions
+//   TAKEAWAY → write a personal reflection (min 10 words)
+//   METRICS  → see accuracy breakdown + bias recognition score
+//   COMPLETE → score saved, completion screen
+//
+// INTERIM SCORING:
+//   Score = (correct MCQs × 30) + takeaway word count
+//   (Full formula with Takeaway Depth tiers and Loaded Words penalty is TBD)
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { fetchServerGameData } from "./actions";
 import { saveUserGameStat } from "@/utils/saveUserGameStat";
-import { ExtractFactsGame } from "@/utils/generate_game";
+import type { ExtractFactsGame } from "@/utils/generate_game";
 import { useRouter } from "next/navigation";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { GameShell } from "@/components/GameShell";
 import { GameLoadingScreen } from "@/components/GameLoadingScreen";
 import { GameErrorScreen } from "@/components/GameErrorScreen";
 
+// All possible game phases — drives which section of the UI is displayed
 type AppPhase = "INTRO" | "QUIZ" | "TAKEAWAY" | "METRICS" | "COMPLETE";
 
 const ExtractFactsPage = () => {
-  const router = useRouter();
+  const router = useRouter(); // for programmatic navigation (redirect to home)
 
+  // AI-generated game content (topic, two paragraphs, MCQ questions + answers)
   const [gameData, setGameData] = useState<ExtractFactsGame | null>(null);
+  // true while the server action is fetching game data
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  // true while the score is being saved (prevents double-submit)
   const [isSubmittingDb, setIsSubmittingDb] = useState<boolean>(false);
 
+  // Anonymous device ID from localStorage (identity for non-signed-in users)
   const deviceIdRef = useDeviceId();
 
+  // Current phase of the game
   const [phase, setPhase] = useState<AppPhase>("INTRO");
+  // Which MCQ question (0-indexed) the player is currently answering
   const [currentQuizIndex, setCurrentQuizIndex] = useState<number>(0);
-  const [quizSelections, setQuizSelections] = useState<Record<number, number>>(
-    {},
-  );
+  // Stores the player's selected option index for each question (key = question index)
+  const [quizSelections, setQuizSelections] = useState<Record<number, number>>({});
+  // The player's free-text takeaway response
   const [takeawayText, setTakeawayText] = useState<string>("");
 
+  // Ref to the scrollable content area — used to scroll to top on phase/question change
   const contentScrollRef = useRef<HTMLDivElement>(null);
 
-  // Splits paragraph_a into individual sentences for the takeaway bullet list.
-  // paragraph_a is treated as the "factual" narrative; paragraph_b is the
-  // spin/speculative version — only A's sentences are shown as verified facts.
-  // The >20 char filter drops short fragments that appear after splitting on "!?".
+  // Extracts up to 5 sentences from paragraph_a to show as "verified facts" in the
+  // TAKEAWAY phase. paragraph_a is the factual narrative; paragraph_b is the spin.
+  // The >20 character filter removes very short fragments that appear after splitting
+  // on sentence-ending punctuation (.!?).
   const verifiedFacts = useMemo(() => {
     if (!gameData || !gameData.paragraph_a) return [];
 
     return gameData.paragraph_a
-      .split(/[.!?]/)
-      .map((sentence) => sentence.trim())
-      .filter((sentence) => sentence.length > 20)
-      .slice(0, 5);
+      .split(/[.!?]/)                              // split into sentences
+      .map((sentence) => sentence.trim())           // remove leading/trailing whitespace
+      .filter((sentence) => sentence.length > 20)  // drop very short fragments
+      .slice(0, 5);                                 // cap at 5 bullets
   }, [gameData]);
 
+  // Load game data once on mount. Checks daily lock, returns cached or fresh data.
   useEffect(() => {
-    async function loadGame() {
+    const loadGame = async () => {
       setIsLoading(true);
       try {
         const response = await fetchServerGameData(deviceIdRef.current);
         if (!response.success) {
           if (response.error === "ALREADY_PLAYED") {
-            router.push("/");
+            router.push("/"); // already played today — redirect home
             return;
           }
         }
@@ -63,32 +89,38 @@ const ExtractFactsPage = () => {
       } catch {
         setIsLoading(false);
       }
-    }
+    };
     loadGame();
   }, [deviceIdRef, router]);
 
+  // Scroll to top whenever the active phase or question changes
   useEffect(() => {
     if (contentScrollRef.current) {
       contentScrollRef.current.scrollTop = 0;
     }
   }, [phase, currentQuizIndex]);
 
+  // Count words in the takeaway textarea (splits on whitespace, ignores empty tokens)
   const takeawayWordCount = takeawayText.trim()
     ? takeawayText.trim().split(/\s+/).filter(Boolean).length
     : 0;
+
   const questions = gameData?.mcq_questions ?? [];
   const currentQuestionItem = questions[currentQuizIndex];
+
+  // Count how many MCQs the player answered correctly across all questions
   const correctCount = questions.reduce((score, q, idx) => {
     return quizSelections[idx] === q.correct_answer_index ? score + 1 : score;
   }, 0);
 
-  // Interim scoring formula: each correct MCQ is worth 30 points, plus a raw
-  // bonus equal to the takeaway word count. The full formula (with Takeaway
-  // Depth tiers and Loaded Words penalty) is pending design confirmation.
+  // INTERIM SCORING: each correct MCQ = 30 points + 1 point per takeaway word.
+  // Wrapped in useMemo so it only recalculates when inputs actually change.
   const finalComputedScore = useMemo(() => {
     return correctCount * 30 + takeawayWordCount;
   }, [correctCount, takeawayWordCount]);
 
+  // Called when the player clicks "Continue" on the METRICS screen.
+  // Saves the score then transitions to COMPLETE.
   const handleMetricsCompletionSubmit = async () => {
     setIsSubmittingDb(true);
     try {
@@ -120,12 +152,15 @@ const ExtractFactsPage = () => {
     router.push("/");
   };
 
+  // Whether the player has selected an answer for the current question
   const isCurrentQuizAnswered = quizSelections[currentQuizIndex] !== undefined;
+  // Whether this is the last MCQ question (determines button label: Next vs Continue)
   const isLastQuestion = currentQuizIndex === questions.length - 1;
+  // The "Continue" button on the TAKEAWAY screen is only enabled once the player
+  // has written at least 10 words — enforces a minimum reflection depth.
   const isTakeawayValid = takeawayWordCount >= 10;
 
   if (isLoading) return <GameLoadingScreen />;
-
   if (!gameData || questions.length === 0) return <GameErrorScreen />;
 
   return (

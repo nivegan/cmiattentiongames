@@ -1,8 +1,19 @@
+// GameErrorScreen.tsx
+// Full-page error card displayed when a game's server action fails —
+// for example: network error, Gemini API timeout, or an unexpected exception.
+//
+// The RETRY button calls window.location.reload(), which hard-refreshes the page.
+// That re-triggers the game page's useEffect mount logic from scratch, which is
+// the simplest reliable recovery path.
+//
+// The optional `message` prop allows future customisation. All current games
+// use the default retro-styled message.
+
 interface GameErrorScreenProps {
-  message?: string;
+  message?: string; // custom error text; defaults to the generic retro message below
 }
 
-export const GameErrorScreen = ({
+const GameErrorScreen = ({
   message = "Telemetry metrics payload failed verification configurations.",
 }: GameErrorScreenProps) => {
   return (
@@ -12,6 +23,8 @@ export const GameErrorScreen = ({
           SYSTEM ERROR
         </p>
         <p className="text-xs leading-relaxed text-[#232323]/80">{message}</p>
+        {/* window.location.reload() is a browser API that hard-refreshes the page,
+            re-running all mount effects and retrying the failed server action */}
         <button
           onClick={() => window.location.reload()}
           className="mt-4 text-xs font-black underline text-[#8B2626] uppercase"
@@ -22,3 +35,5 @@ export const GameErrorScreen = ({
     </div>
   );
 };
+
+export { GameErrorScreen };

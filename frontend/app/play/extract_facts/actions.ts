@@ -1,6 +1,13 @@
 "use server";
+// extract_facts/actions.ts
+// Server action for the Extract Facts game page. Identical structure to
+// gut_check/actions.ts — see that file for a detailed explanation.
+//
+// This one checks the "EXTRACT_THE_FACTS" daily lock and fetches AI-generated
+// paragraph + MCQ content via generate("EXTRACT_THE_FACTS").
 
-import { ExtractFactsGame, generate } from "@/utils/generate_game";
+import { generate } from "@/utils/generate_game";
+import type { ExtractFactsGame } from "@/utils/generate_game";
 import { auth } from "@clerk/nextjs/server";
 import { checkHasPlayedToday } from "@/utils/checkHasPlayedToday";
 
