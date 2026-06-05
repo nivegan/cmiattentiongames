@@ -21,10 +21,10 @@ import { checkHasPlayedToday } from "@/utils/checkHasPlayedToday";
 import type { GameMode } from "@/utils/generate_game";
 
 const saveUserGameStat = async (
-  score: number,    // the final computed score (0–100)
+  score: number, // the final computed score (0–100)
   deviceId: string, // anonymous localStorage UUID; "" if the user is signed in
-  mode: GameMode,   // which game, e.g. "GUT_CHECK"
-  source: string,   // tracking tag, e.g. "web_gut_check_v1"
+  mode: GameMode, // which game, e.g. "GUT_CHECK"
+  source: string, // tracking tag, e.g. "web_gut_check_v1"
 ): Promise<{ success: boolean; error?: "ALREADY_PLAYED" | string }> => {
   try {
     // auth() reads the Clerk session from the request headers.
@@ -56,11 +56,11 @@ const saveUserGameStat = async (
         id: rowId,
         user_id: dbSafeUuid,
         game_type_id: mode,
-        difficulty_band: 1.0,   // reserved for future adaptive difficulty; fixed at 1 now
+        difficulty_band: 1.0, // reserved for future adaptive difficulty; fixed at 1 now
         score,
-        is_success: true,        // all submitted games count as "success" for now
-        reaction_time_ms: null,  // not tracked yet
-        metadata: { source },    // records which game version submitted this row
+        is_success: true, // all submitted games count as "success" for now
+        reaction_time_ms: null, // not tracked yet
+        metadata: { source }, // records which game version submitted this row
       },
     });
 

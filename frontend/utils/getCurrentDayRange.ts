@@ -36,8 +36,8 @@ const getCurrentDayRange = () => {
 
   // By appending "+05:30" we declare this as IST. JavaScript automatically
   // converts it to UTC when constructing the Date object — no manual arithmetic.
-  const start = new Date(`${year}-${month}-${day}T00:00:00+05:30`);     // IST midnight
-  const end   = new Date(`${year}-${month}-${day}T23:59:59.999+05:30`); // IST end-of-day
+  const start = new Date(`${year}-${month}-${day}T00:00:00+05:30`); // IST midnight
+  const end = new Date(`${year}-${month}-${day}T23:59:59.999+05:30`); // IST end-of-day
 
   return { start, end };
 };

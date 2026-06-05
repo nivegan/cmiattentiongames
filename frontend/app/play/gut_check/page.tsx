@@ -43,20 +43,20 @@ type AppPhase =
 // Stores the player's responses for a single round (all three steps)
 interface RoundResponse {
   anchorGuess: boolean; // did they think the anchor statement was true?
-  realGuess: number;    // their numeric answer to the real question
-  confidence: number;   // their self-rated confidence (0–100)
+  realGuess: number; // their numeric answer to the real question
+  confidence: number; // their self-rated confidence (0–100)
 }
 
 // The computed breakdown for a single round, used in the METRICS and RESULTS phases
 interface CalibrationItemBreakdown {
   roundNum: number;
   confidence: number;
-  accuracy: number;    // how close their guess was to the actual value (0–100)
-  score: number;       // final round score combining accuracy + calibration
+  accuracy: number; // how close their guess was to the actual value (0–100)
+  score: number; // final round score combining accuracy + calibration
   questionText: string;
   unit: string;
-  guess: number;       // what they entered
-  actual: number;      // the real answer from the AI-generated game data
+  guess: number; // what they entered
+  actual: number; // the real answer from the AI-generated game data
 }
 
 // Summary stats computed from all rounds

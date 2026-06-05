@@ -18,7 +18,7 @@ export interface HistoryEntry {
   game_type_id: GameMode | null; // null if the DB row has an unrecognised game type
   score: number;
   is_success: boolean;
-  created_at: string;            // ISO 8601 string, e.g. "2026-06-05T12:00:00.000Z"
+  created_at: string; // ISO 8601 string, e.g. "2026-06-05T12:00:00.000Z"
   difficulty_band: number;
 }
 
@@ -72,7 +72,9 @@ const computeStreak = (dates: Date[]): number => {
   return streak;
 };
 
-export const fetchHistory = async (deviceId: string): Promise<HistoryResult> => {
+export const fetchHistory = async (
+  deviceId: string,
+): Promise<HistoryResult> => {
   // auth() reads the Clerk session. userId is null for anonymous users.
   const { userId } = await auth();
   // Prefer the Clerk user ID (persistent across devices); fall back to anonymous device UUID.
@@ -93,10 +95,10 @@ export const fetchHistory = async (deviceId: string): Promise<HistoryResult> => 
   return {
     entries: rows.map((r) => ({
       id: r.id,
-      game_type_id: r.game_type_id ?? null,      // ?? null: coerce undefined to null for the type
+      game_type_id: r.game_type_id ?? null, // ?? null: coerce undefined to null for the type
       score: r.score,
       is_success: r.is_success,
-      created_at: r.created_at.toISOString(),     // Date → string for serialisation across the boundary
+      created_at: r.created_at.toISOString(), // Date → string for serialisation across the boundary
       difficulty_band: r.difficulty_band,
     })),
     streak: computeStreak(rows.map((r) => r.created_at)),

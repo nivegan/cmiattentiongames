@@ -61,19 +61,19 @@ type GamePhase = "WELCOME" | "PLAYING" | "SAVING" | "RESULTS";
 // "distraction" = gray square (tap to score), "focus" = red diamond (avoid)
 type BubbleType = "distraction" | "focus";
 
-const GAME_DURATION = 60;          // seconds
-const MAX_LIVES = 3;               // red diamond hits before game over
-const BUBBLE_START_SIZE = 3;       // starting half-side in px (bubbles start tiny)
-const BUBBLE_MAX_SIZE = 46;        // half-side px at which a bubble auto-bursts
-const BUBBLE_GROWTH_BASE = 5.5;    // px per second growth rate (base)
-const SPAWN_INTERVAL_BASE = 1.6;   // seconds between spawns at neutral performance
-const MAX_DENSITY = 18;            // maximum live bubbles on screen at once
-const DISTRACTION_RATIO = 0.65;    // 65% gray, 35% red
-const BUBBLE_SPEED_BASE = 38;      // px per second movement speed (base)
-const PERF_WINDOW = 10;            // rolling window size for adaptive difficulty
+const GAME_DURATION = 60; // seconds
+const MAX_LIVES = 3; // red diamond hits before game over
+const BUBBLE_START_SIZE = 3; // starting half-side in px (bubbles start tiny)
+const BUBBLE_MAX_SIZE = 46; // half-side px at which a bubble auto-bursts
+const BUBBLE_GROWTH_BASE = 5.5; // px per second growth rate (base)
+const SPAWN_INTERVAL_BASE = 1.6; // seconds between spawns at neutral performance
+const MAX_DENSITY = 18; // maximum live bubbles on screen at once
+const DISTRACTION_RATIO = 0.65; // 65% gray, 35% red
+const BUBBLE_SPEED_BASE = 38; // px per second movement speed (base)
+const PERF_WINDOW = 10; // rolling window size for adaptive difficulty
 
 const DISTRACTION_COLOR = "#9E9E9E"; // gray bubble fill
-const FOCUS_COLOR = "#8B2626";        // red diamond fill
+const FOCUS_COLOR = "#8B2626"; // red diamond fill
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -81,35 +81,35 @@ const FOCUS_COLOR = "#8B2626";        // red diamond fill
 interface Bubble {
   id: number;
   type: BubbleType;
-  x: number;           // centre X position in canvas coordinates
-  y: number;           // centre Y position
-  vx: number;          // velocity in px/sec (horizontal)
-  vy: number;          // velocity in px/sec (vertical)
-  size: number;        // current half-side in px (grows each frame)
-  growthRate: number;  // px per second this bubble grows
-  alive: boolean;      // false when clicked or auto-burst (removed next cleanup)
+  x: number; // centre X position in canvas coordinates
+  y: number; // centre Y position
+  vx: number; // velocity in px/sec (horizontal)
+  vy: number; // velocity in px/sec (vertical)
+  size: number; // current half-side in px (grows each frame)
+  growthRate: number; // px per second this bubble grows
+  alive: boolean; // false when clicked or auto-burst (removed next cleanup)
 }
 
 // Full mutable game state — lives in a ref (gs.current), mutated by the RAF loop.
 // React state is only updated for HUD values (timer, score, lives) every 200 ms.
 interface GameState {
   bubbles: Bubble[];
-  nextId: number;          // incrementing ID counter for new bubbles
-  hits: number;            // gray bubbles clicked
-  penalties: number;       // red bubbles clicked (lives lost)
-  livesLeft: number;       // remaining lives
-  timeLeft: number;        // seconds remaining
-  spawnTimer: number;      // seconds until the next bubble spawns
-  lastFrame: number;       // timestamp of the previous RAF frame (ms)
-  lastDisplay: number;     // last time the HUD React state was refreshed (ms)
-  active: boolean;         // set to false to stop the loop
-  rng: () => number;       // seeded PRNG for deterministic positions
-  w: number;               // canvas width in px
-  h: number;               // canvas height in px
+  nextId: number; // incrementing ID counter for new bubbles
+  hits: number; // gray bubbles clicked
+  penalties: number; // red bubbles clicked (lives lost)
+  livesLeft: number; // remaining lives
+  timeLeft: number; // seconds remaining
+  spawnTimer: number; // seconds until the next bubble spawns
+  lastFrame: number; // timestamp of the previous RAF frame (ms)
+  lastDisplay: number; // last time the HUD React state was refreshed (ms)
+  active: boolean; // set to false to stop the loop
+  rng: () => number; // seeded PRNG for deterministic positions
+  w: number; // canvas width in px
+  h: number; // canvas height in px
   ctx: CanvasRenderingContext2D; // canvas 2D rendering context
-  perfWindow: number[];    // rolling array of recent outcomes: 1=good, 0=bad
-  totalGrays: number;      // total gray bubbles spawned (denominator for score ratio)
-  graysAutoBurst: number;  // gray bubbles that grew to max without being clicked
+  perfWindow: number[]; // rolling array of recent outcomes: 1=good, 0=bad
+  totalGrays: number; // total gray bubbles spawned (denominator for score ratio)
+  graysAutoBurst: number; // gray bubbles that grew to max without being clicked
 }
 
 // Adjusts the spawn interval based on recent performance.
@@ -133,7 +133,7 @@ const ClearTheAirPage = () => {
   // HUD display values — updated from the RAF loop every 200 ms to avoid
   // calling setState 60 times per second.
   const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
-  const [cleared, setCleared] = useState(0);        // gray bubbles clicked
+  const [cleared, setCleared] = useState(0); // gray bubbles clicked
   const [livesLeft, setLivesLeft] = useState(MAX_LIVES);
   const [displayScore, setDisplayScore] = useState(0); // live score estimate
 
@@ -148,9 +148,9 @@ const ClearTheAirPage = () => {
 
   const deviceIdRef = useDeviceId();
   const [alreadyPlayed, setAlreadyPlayed] = useState(false); // shown in RESULTS if true
-  const [saveFailed, setSaveFailed] = useState(false);        // shown in RESULTS if true
-  const [isChecking, setIsChecking] = useState(true);         // daily-lock check in flight
-  const [isError, setIsError] = useState(false);              // lock check threw an error
+  const [saveFailed, setSaveFailed] = useState(false); // shown in RESULTS if true
+  const [isChecking, setIsChecking] = useState(true); // daily-lock check in flight
+  const [isError, setIsError] = useState(false); // lock check threw an error
 
   // Ref to the container div — used to read width/height for canvas resize
   const containerRef = useRef<HTMLDivElement>(null);
@@ -186,7 +186,8 @@ const ClearTheAirPage = () => {
       // The square is drawn relative to the translated origin so it appears as a diamond.
       if (b.type === "focus") ctx.rotate(Math.PI / 4);
 
-      ctx.fillStyle = b.type === "distraction" ? DISTRACTION_COLOR : FOCUS_COLOR;
+      ctx.fillStyle =
+        b.type === "distraction" ? DISTRACTION_COLOR : FOCUS_COLOR;
       ctx.fillRect(-s, -s, s * 2, s * 2); // draw square centred on origin
 
       ctx.strokeStyle = "rgba(35,35,35,0.25)";
@@ -212,7 +213,8 @@ const ClearTheAirPage = () => {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
-    const ratio = state.totalGrays > 0 ? (state.hits / state.totalGrays) * 100 : 0;
+    const ratio =
+      state.totalGrays > 0 ? (state.hits / state.totalGrays) * 100 : 0;
     const finalScore = Math.max(
       0,
       Math.round(ratio - state.graysAutoBurst * 25 - state.penalties * 30),
@@ -232,7 +234,8 @@ const ClearTheAirPage = () => {
     if (!state) return;
     const { rng, w, h } = state;
 
-    const type: BubbleType = rng() < DISTRACTION_RATIO ? "distraction" : "focus";
+    const type: BubbleType =
+      rng() < DISTRACTION_RATIO ? "distraction" : "focus";
     const spd = BUBBLE_SPEED_BASE * (0.5 + rng() * 1.0);
     const growthRate = BUBBLE_GROWTH_BASE * (0.7 + rng() * 0.7);
     const angle = rng() * Math.PI * 2;
@@ -335,10 +338,20 @@ const ClearTheAirPage = () => {
 
         // Bounce off canvas walls
         const s = b.size;
-        if (b.x - s < 0) { b.x = s; b.vx = Math.abs(b.vx); }
-        else if (b.x + s > state.w) { b.x = state.w - s; b.vx = -Math.abs(b.vx); }
-        if (b.y - s < 0) { b.y = s; b.vy = Math.abs(b.vy); }
-        else if (b.y + s > state.h) { b.y = state.h - s; b.vy = -Math.abs(b.vy); }
+        if (b.x - s < 0) {
+          b.x = s;
+          b.vx = Math.abs(b.vx);
+        } else if (b.x + s > state.w) {
+          b.x = state.w - s;
+          b.vx = -Math.abs(b.vx);
+        }
+        if (b.y - s < 0) {
+          b.y = s;
+          b.vy = Math.abs(b.vy);
+        } else if (b.y + s > state.h) {
+          b.y = state.h - s;
+          b.vy = -Math.abs(b.vy);
+        }
       }
 
       if (state.bubbles.length > 200) {
@@ -351,9 +364,15 @@ const ClearTheAirPage = () => {
         state.lastDisplay = ts;
         setTimeLeft(Math.ceil(state.timeLeft));
         setCleared(state.hits);
-        const ratio = state.totalGrays > 0 ? (state.hits / state.totalGrays) * 100 : 0;
+        const ratio =
+          state.totalGrays > 0 ? (state.hits / state.totalGrays) * 100 : 0;
         setDisplayScore(
-          Math.max(0, Math.round(ratio - state.graysAutoBurst * 25 - state.penalties * 30)),
+          Math.max(
+            0,
+            Math.round(
+              ratio - state.graysAutoBurst * 25 - state.penalties * 30,
+            ),
+          ),
         );
       }
 
@@ -405,7 +424,7 @@ const ClearTheAirPage = () => {
           // Red diamond: un-rotate the click by −45° then AABB-test the underlying square.
           // Math.SQRT1_2 = 1/√2 ≈ 0.707 = cos(45°) = sin(45°)
           const c45 = Math.SQRT1_2;
-          const rx = dx * c45 + dy * c45;  // rotated x
+          const rx = dx * c45 + dy * c45; // rotated x
           const ry = -dx * c45 + dy * c45; // rotated y
           hit = Math.abs(rx) <= s && Math.abs(ry) <= s;
         }
@@ -415,7 +434,7 @@ const ClearTheAirPage = () => {
           if (b.type === "distraction") {
             state.hits++;
             state.perfWindow.push(1); // good outcome
-            setCleared(state.hits);   // update HUD
+            setCleared(state.hits); // update HUD
           } else {
             // Red diamond hit — lose a life
             state.penalties++;
@@ -696,7 +715,11 @@ const ClearTheAirPage = () => {
                       className="flex justify-between"
                     >
                       <span>{row.label}:</span>
-                      <span className={row.accent ? "text-[#8B2626]" : "text-[#232323]"}>
+                      <span
+                        className={
+                          row.accent ? "text-[#8B2626]" : "text-[#232323]"
+                        }
+                      >
                         {row.value}
                       </span>
                     </motion.div>
@@ -705,7 +728,11 @@ const ClearTheAirPage = () => {
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ width: `${result.score}%` }}
-                      transition={{ delay: 0.2, duration: 0.5, ease: "easeOut" }}
+                      transition={{
+                        delay: 0.2,
+                        duration: 0.5,
+                        ease: "easeOut",
+                      }}
                       className="h-full bg-[#8B2626]"
                     />
                   </div>

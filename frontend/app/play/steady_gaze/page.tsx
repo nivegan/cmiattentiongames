@@ -52,7 +52,9 @@ const hslToHex = (h: number, s: number, l: number): string => {
   const f = (n: number) => {
     const k = (n + h / 30) % 12;
     const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(255 * color).toString(16).padStart(2, "0");
+    return Math.round(255 * color)
+      .toString(16)
+      .padStart(2, "0");
   };
   return `#${f(0)}${f(8)}${f(4)}`;
 };
@@ -69,11 +71,11 @@ const computeGameData = () => {
   return {
     theme_title: `Pure Awareness Run #${baseHue}`,
     speed: parseFloat((0.8 + seed * 1.5).toFixed(2)),
-    screen_color: hslToHex(baseHue, 55, 50),   // background: same hue, medium saturation
-    dot_color: hslToHex(baseHue, 70, 28),       // dot: same hue but darker
-    spawn_pattern_seed: seedInt,                 // raw uint32 → passed to mulberry32
+    screen_color: hslToHex(baseHue, 55, 50), // background: same hue, medium saturation
+    dot_color: hslToHex(baseHue, 70, 28), // dot: same hue but darker
+    spawn_pattern_seed: seedInt, // raw uint32 → passed to mulberry32
     miss_deceleration_factor: 0.8,
-    max_expansion_cap_seconds: 10,               // dot visible for 10 s before auto-miss
+    max_expansion_cap_seconds: 10, // dot visible for 10 s before auto-miss
   };
 };
 
@@ -87,13 +89,13 @@ type DotState = "hidden" | "catchable" | "missed";
 // have to write a separate interface that might get out of sync.
 type GameData = ReturnType<typeof computeGameData>;
 
-const GAME_DURATION = 60;       // total game time in seconds
-const DOT_BASE_RADIUS = 10;     // dot radius in px (never changes)
-const DOT_MAX_RADIUS = 80;      // unused — kept for future reference
-const FADE_IN_DURATION = 10;    // seconds for the dot to go from invisible to visible
-const HIT_POINTS = 25;          // score per caught dot
-const MISS_PENALTY = 20;        // score deducted per missed dot
-const TAP_PENALTY = 5;          // score deducted per tap when no dot is visible
+const GAME_DURATION = 60; // total game time in seconds
+const DOT_BASE_RADIUS = 10; // dot radius in px (never changes)
+const DOT_MAX_RADIUS = 80; // unused — kept for future reference
+const FADE_IN_DURATION = 10; // seconds for the dot to go from invisible to visible
+const HIT_POINTS = 25; // score per caught dot
+const MISS_PENALTY = 20; // score deducted per missed dot
+const TAP_PENALTY = 5; // score deducted per tap when no dot is visible
 
 // Mutable game state object mutated directly by the RAF loop — NOT React state.
 // Using React state here would cause 60 re-renders per second. Instead, this
@@ -101,20 +103,20 @@ const TAP_PENALTY = 5;          // score deducted per tap when no dot is visible
 interface GameState {
   timeLeft: number;
   dotState: DotState;
-  dotX: number;          // dot centre X in px (from left edge of game area)
-  dotY: number;          // dot centre Y in px (from top edge of game area)
-  dotAge: number;        // seconds the current dot has been visible
-  dotRadius: number;     // current radius (fixed at DOT_BASE_RADIUS)
-  spawnTimer: number;    // seconds until the next dot spawns
-  hits: number;          // dots caught
-  misses: number;        // dots that expired without being caught
-  penaltyTaps: number;   // taps when no dot was visible
+  dotX: number; // dot centre X in px (from left edge of game area)
+  dotY: number; // dot centre Y in px (from top edge of game area)
+  dotAge: number; // seconds the current dot has been visible
+  dotRadius: number; // current radius (fixed at DOT_BASE_RADIUS)
+  spawnTimer: number; // seconds until the next dot spawns
+  hits: number; // dots caught
+  misses: number; // dots that expired without being caught
+  penaltyTaps: number; // taps when no dot was visible
   lastFrameTime: number; // timestamp of the previous RAF frame (ms)
   lastDisplayUpdate: number; // last time React state was updated from the loop (ms)
-  areaWidth: number;     // game area width in px (used for spawn bounds)
-  areaHeight: number;    // game area height in px
-  active: boolean;       // set to false to stop the loop
-  rng: () => number;     // seeded PRNG (mulberry32) for deterministic spawn positions
+  areaWidth: number; // game area width in px (used for spawn bounds)
+  areaHeight: number; // game area height in px
+  active: boolean; // set to false to stop the loop
+  rng: () => number; // seeded PRNG (mulberry32) for deterministic spawn positions
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -446,7 +448,10 @@ const SteadyGazePage = () => {
                   {[
                     { label: "DURATION", value: "60 seconds" },
                     { label: "GOAL", value: "Tap when you see the shimmer" },
-                    { label: "FOCUS", value: "Watch for subtle visual changes" },
+                    {
+                      label: "FOCUS",
+                      value: "Watch for subtle visual changes",
+                    },
                   ].map(({ label, value }) => (
                     <div key={label} className="flex gap-1.5">
                       <span className="font-bold text-[#8B2626] uppercase w-20 inline-block shrink-0">

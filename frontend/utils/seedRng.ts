@@ -41,7 +41,7 @@ const getDailySeed = (str: string): number => {
 const getTodayIST = (): string => {
   const now = new Date();
   return new Date(now.getTime() + 5.5 * 60 * 60 * 1000)
-    .toISOString()  // e.g. "2026-06-05T18:30:00.000Z" (UTC form of IST midnight)
+    .toISOString() // e.g. "2026-06-05T18:30:00.000Z" (UTC form of IST midnight)
     .split("T")[0]; // take only the date part → "2026-06-05"
 };
 

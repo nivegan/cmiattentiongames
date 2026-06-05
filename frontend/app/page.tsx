@@ -18,7 +18,6 @@ const HomePage = () => {
   return (
     // Full-width flex row: nav links on the left, auth buttons on the right
     <div className="flex items-center justify-between w-full border-b px-4">
-
       {/* Left: History, Settings links + "Play" dropdown */}
       <Menubar className="border-none shadow-none">
         <MenubarMenu>

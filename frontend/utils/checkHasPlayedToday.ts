@@ -13,7 +13,7 @@ import type { GameMode } from "./generate_game";
 // Returns true if the user already has a score row for this game today.
 const checkHasPlayedToday = async (
   targetId: string, // Clerk user ID ("user_2abc...") or anonymous localStorage UUID
-  game: GameMode,   // which game to check, e.g. "GUT_CHECK"
+  game: GameMode, // which game to check, e.g. "GUT_CHECK"
 ): Promise<boolean> => {
   // Get the UTC timestamps that bracket today's IST calendar day.
   const { start, end } = getCurrentDayRange();
@@ -25,11 +25,11 @@ const checkHasPlayedToday = async (
 
   const existingRecord = await prisma.user_stats.findFirst({
     where: {
-      user_id: dbSafeUuid,  // match this specific user
-      game_type_id: game,   // match this specific game mode
+      user_id: dbSafeUuid, // match this specific user
+      game_type_id: game, // match this specific game mode
       created_at: {
-        gte: start,         // created after today's IST midnight (00:00:00)
-        lte: end,           // created before today's IST end-of-day (23:59:59)
+        gte: start, // created after today's IST midnight (00:00:00)
+        lte: end, // created before today's IST end-of-day (23:59:59)
       },
     },
   });

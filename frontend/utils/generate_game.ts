@@ -14,7 +14,7 @@
 // That's why yargs (CLI argument parser) and dotenv are imported here.
 
 import { z } from "zod";
-import yargs from "yargs";             // CLI argument parser — used only when run as a script
+import yargs from "yargs"; // CLI argument parser — used only when run as a script
 import { hideBin } from "yargs/helpers"; // strips "node script.ts" from process.argv
 import dotenv from "dotenv";
 import { prisma } from "./prismaInit";
@@ -85,8 +85,8 @@ const GutCheckSchema = z.object({
 
 const ExtractFactsSchema = z.object({
   topic: z.string(),
-  paragraph_a: z.string(),  // factual narrative
-  paragraph_b: z.string(),  // spin/speculative narrative
+  paragraph_a: z.string(), // factual narrative
+  paragraph_b: z.string(), // spin/speculative narrative
   mcq_questions: z
     .array(
       z.object({
@@ -152,7 +152,9 @@ const hslToHex = (h: number, s: number, l: number): string => {
   const f = (n: number) => {
     const k = (n + h / 30) % 12;
     const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(255 * color).toString(16).padStart(2, "0");
+    return Math.round(255 * color)
+      .toString(16)
+      .padStart(2, "0");
   };
   return `#${f(0)}${f(8)}${f(4)}`;
 };
@@ -199,7 +201,7 @@ const generateClearAirParams = (today: string) => {
 
 const generate = async (
   customMode: GameMode | null = null, // which game to generate (null = use CLI arg)
-  forceRefresh: boolean = false,       // bypass the DB cache and regenerate fresh content
+  forceRefresh: boolean = false, // bypass the DB cache and regenerate fresh content
 ): Promise<GameResult> => {
   // yargs parses --mode and --forceRefresh from process.argv. In the web
   // runtime, server actions always pass customMode directly, so this is only
@@ -209,7 +211,9 @@ const generate = async (
     forceRefresh?: boolean | string;
   };
   // Priority: function argument > CLI flag > default to EXTRACT_THE_FACTS
-  const mode: GameMode = (customMode || argv.mode || "EXTRACT_THE_FACTS") as GameMode;
+  const mode: GameMode = (customMode ||
+    argv.mode ||
+    "EXTRACT_THE_FACTS") as GameMode;
 
   const now = new Date();
   // getTimezoneOffset() returns the local UTC offset in minutes (negative for
@@ -255,14 +259,17 @@ const generate = async (
         // Check that the cached content has at least one key field that
         // indicates it is structurally complete.
         const hasFacts = mode === "EXTRACT_THE_FACTS" && content.mcq_questions;
-        const hasGaze  = mode === "STEADY_GAZE" && content.screen_color;
-        const hasAir   = mode === "CLEAR_THE_AIR" && content.progression_intensity_multiplier;
+        const hasGaze = mode === "STEADY_GAZE" && content.screen_color;
+        const hasAir =
+          mode === "CLEAR_THE_AIR" && content.progression_intensity_multiplier;
 
         // Reject cached GUT_CHECK rows that are about mycology. Gemini repeatedly
         // generated mushroom-themed content early in the project despite the
         // explicit anti-repetition filter. Those rows were left in the DB (not
         // deleted) but we skip them here so a fresh non-mycology row is generated.
-        const isStuckMushroom = content?.industry_theme?.toLowerCase().includes("mycology");
+        const isStuckMushroom = content?.industry_theme
+          ?.toLowerCase()
+          .includes("mycology");
         const hasGut =
           mode === "GUT_CHECK" &&
           content?.questions?.[0]?.hasOwnProperty("the_real_question") &&
@@ -437,4 +444,11 @@ Expected JSON Structure:
 };
 
 export { generate };
-export type { GameMode, GutCheckGame, ExtractFactsGame, SteadyGazeGame, ClearAirGame, GameResult };
+export type {
+  GameMode,
+  GutCheckGame,
+  ExtractFactsGame,
+  SteadyGazeGame,
+  ClearAirGame,
+  GameResult,
+};

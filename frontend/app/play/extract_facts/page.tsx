@@ -49,7 +49,9 @@ const ExtractFactsPage = () => {
   // Which MCQ question (0-indexed) the player is currently answering
   const [currentQuizIndex, setCurrentQuizIndex] = useState<number>(0);
   // Stores the player's selected option index for each question (key = question index)
-  const [quizSelections, setQuizSelections] = useState<Record<number, number>>({});
+  const [quizSelections, setQuizSelections] = useState<Record<number, number>>(
+    {},
+  );
   // The player's free-text takeaway response
   const [takeawayText, setTakeawayText] = useState<string>("");
 
@@ -64,10 +66,10 @@ const ExtractFactsPage = () => {
     if (!gameData || !gameData.paragraph_a) return [];
 
     return gameData.paragraph_a
-      .split(/[.!?]/)                              // split into sentences
-      .map((sentence) => sentence.trim())           // remove leading/trailing whitespace
-      .filter((sentence) => sentence.length > 20)  // drop very short fragments
-      .slice(0, 5);                                 // cap at 5 bullets
+      .split(/[.!?]/) // split into sentences
+      .map((sentence) => sentence.trim()) // remove leading/trailing whitespace
+      .filter((sentence) => sentence.length > 20) // drop very short fragments
+      .slice(0, 5); // cap at 5 bullets
   }, [gameData]);
 
   // Load game data once on mount. Checks daily lock, returns cached or fresh data.
