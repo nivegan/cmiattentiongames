@@ -30,6 +30,8 @@ import { useDeviceId } from "@/hooks/useDeviceId";
 import { GameShell } from "@/components/GameShell";
 import { GameLoadingScreen } from "@/components/GameLoadingScreen";
 import { GameErrorScreen } from "@/components/GameErrorScreen";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 
 // All the possible game phases — drives which UI section is shown
 type AppPhase =
@@ -290,9 +292,9 @@ const GutCheckPage = () => {
       onBack={handleBackToHome}
       badge={
         phase !== "WELCOME" && phase !== "METRICS" && phase !== "RESULTS" ? (
-          <div className="bg-[#232323] text-[#00FF33] font-bold text-[10px] px-2 py-1 border border-[#232323] tracking-widest">
+          <Badge className="rounded-none h-auto bg-[#232323] text-[#00FF33] font-bold text-[10px] px-2 py-1 border border-[#232323] tracking-widest">
             ROUND {currentRoundIndex + 1}/{totalRounds}
-          </div>
+          </Badge>
         ) : undefined
       }
     >
@@ -383,12 +385,12 @@ const GutCheckPage = () => {
               </p>
             </div>
             <div className="space-y-4">
-              <input
+              <Input
                 type="number"
                 value={numericInput}
                 onChange={(e) => setNumericInput(e.target.value)}
                 placeholder="Enter your answer..."
-                className="w-full bg-[#FAF6F0] border-2 border-[#232323] px-4 py-3 text-xs font-mono font-bold tracking-wider text-[#232323] shadow-[3px_3px_0px_rgba(35,35,35,0.1)] focus:outline-none"
+                className="w-full bg-[#FAF6F0] border-2 border-[#232323] px-4 py-3 text-xs font-mono font-bold tracking-wider text-[#232323] shadow-[3px_3px_0px_rgba(35,35,35,0.1)] rounded-none h-auto focus:outline-none focus-visible:ring-0 focus-visible:border-[#232323]"
               />
               <button
                 disabled={!numericInput.trim()}

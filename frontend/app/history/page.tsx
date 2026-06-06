@@ -18,6 +18,7 @@ import Link from "next/link";
 import { fetchHistory } from "./actions";
 import type { HistoryResult } from "./actions";
 import type { GameMode } from "@/utils/generate_game";
+import { Badge } from "@/components/ui/badge";
 
 // Maps each game mode string to its human-readable display name.
 // Partial<Record<...>> means not every GameMode key is required — modes without
@@ -180,9 +181,9 @@ const HistoryPage = () => {
                 </p>
               </div>
               <div className="flex items-center gap-4">
-                <div className="bg-[#232323] px-3 py-1 text-[#00FF33] font-mono text-sm shadow-[2px_2px_0px_#8B2626]">
+                <Badge className="rounded-none h-auto border-none bg-[#232323] px-3 py-1 text-[#00FF33] font-mono text-sm shadow-[2px_2px_0px_#8B2626]">
                   {entry.score} pts
-                </div>
+                </Badge>
                 <span
                   className={`text-xs uppercase tracking-wider font-bold ${
                     entry.is_success

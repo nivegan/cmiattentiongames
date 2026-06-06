@@ -27,6 +27,8 @@ import { useDeviceId } from "@/hooks/useDeviceId";
 import { GameShell } from "@/components/GameShell";
 import { GameLoadingScreen } from "@/components/GameLoadingScreen";
 import { GameErrorScreen } from "@/components/GameErrorScreen";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 
 // All possible game phases — drives which section of the UI is displayed
 type AppPhase = "INTRO" | "QUIZ" | "TAKEAWAY" | "METRICS" | "COMPLETE";
@@ -170,9 +172,9 @@ const ExtractFactsPage = () => {
       title="EXTRACT FACTS"
       onBack={handleBackToHome}
       badge={
-        <div className="bg-[#232323] text-[#00FF33] font-bold text-[10px] px-2 py-1 border border-[#232323] tracking-widest">
+        <Badge className="rounded-none h-auto bg-[#232323] text-[#00FF33] font-bold text-[10px] px-2 py-1 border border-[#232323] tracking-widest">
           {phase === "INTRO" ? "1/3" : phase === "QUIZ" ? "2/3" : "3/3"}
-        </div>
+        </Badge>
       }
     >
       {phase !== "COMPLETE" && (
@@ -241,9 +243,6 @@ const ExtractFactsPage = () => {
               <h3 className="font-extrabold tracking-tight text-[#8B2626] text-sm uppercase">
                 QUESTION {currentQuizIndex + 1} / {questions.length}
               </h3>
-              <div className="bg-[#1C261F] text-[#42F56C] font-bold text-[11px] px-2 py-0.5 rounded-sm border border-[#2D3B31]">
-                {correctCount}/{questions.length}
-              </div>
             </div>
 
             <div className="bg-[#FAF8F5] border border-[#D9CDB3] p-4 shadow-[4px_4px_0px_rgba(217,205,179,0.6)] rounded-sm">
@@ -343,11 +342,11 @@ const ExtractFactsPage = () => {
                 about this event?
               </label>
               <div className="relative">
-                <textarea
+                <Textarea
                   value={takeawayText}
                   onChange={(e) => setTakeawayText(e.target.value)}
                   placeholder="In my opinion, this event shows that...&#10;I believe the key issue is...&#10;My perspective is..."
-                  className="w-full h-32 bg-[#FAF8F5] border-2 border-[#3A221D] p-3 text-[13px] font-mono leading-relaxed placeholder:text-[#3A221D]/30 text-[#3A221D] rounded-sm focus:outline-none focus:ring-2 focus:ring-[#8B2626]/20 resize-none shadow-inner"
+                  className="w-full h-32 bg-[#FAF8F5] border-2 border-[#3A221D] p-3 text-[13px] font-mono leading-relaxed placeholder:text-[#3A221D]/30 text-[#3A221D] rounded-sm focus:outline-none focus:ring-2 focus:ring-[#8B2626]/20 focus-visible:ring-0 focus-visible:border-[#3A221D] field-sizing-fixed resize-none shadow-inner"
                 />
                 <div className="absolute bottom-2.5 right-3 text-[9px] font-bold px-1.5 py-0.5 rounded-xs bg-[#1C261F] text-[#42F56C] border border-[#2D3B31]">
                   {takeawayWordCount} / 10 WORDS

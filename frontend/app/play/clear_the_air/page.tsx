@@ -47,6 +47,7 @@ import { GameShell } from "@/components/GameShell";
 import { saveUserGameStat } from "@/utils/saveUserGameStat";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { getTodayIST, getDailySeed, mulberry32 } from "@/utils/seedRng";
+import { Badge } from "@/components/ui/badge";
 
 // Generates the spawn seed from today's IST date. All bubble positions and
 // sequences are deterministic — same day → same game for all players.
@@ -525,9 +526,9 @@ const ClearTheAirPage = () => {
       onBack={handleBackToHome}
       badge={
         phase === "PLAYING" ? (
-          <div className="bg-[#8B2626] text-[#FAF6F0] font-black text-[9px] px-2 py-0.5 tracking-widest border border-[#232323]">
+          <Badge className="rounded-none h-auto bg-[#8B2626] text-[#FAF6F0] font-black text-[9px] px-2 py-0.5 tracking-widest border border-[#232323]">
             STAGE 1/1
-          </div>
+          </Badge>
         ) : undefined
       }
     >
