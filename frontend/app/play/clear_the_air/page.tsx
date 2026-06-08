@@ -45,6 +45,7 @@ import { GameErrorScreen } from "@/components/GameErrorScreen";
 import { useRouter } from "next/navigation";
 import { GameShell } from "@/components/GameShell";
 import { saveUserGameStat } from "@/utils/saveUserGameStat";
+import { logFunnelEvent } from "@/utils/logFunnelEvent";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { getTodayIST, getDailySeed, mulberry32 } from "@/utils/seedRng";
 import { Badge } from "@/components/ui/badge";
@@ -400,6 +401,7 @@ const ClearTheAirPage = () => {
     (e: MouseEvent<HTMLCanvasElement>) => {
       const state = gs.current;
       if (!state?.active) return;
+      logFunnelEvent("GAME_CLICK", deviceIdRef.current, "CLEAR_THE_AIR");
       const canvas = canvasRef.current;
       if (!canvas) return;
 
@@ -453,7 +455,7 @@ const ClearTheAirPage = () => {
         }
       }
     },
-    [endGame],
+    [endGame, deviceIdRef],
   );
 
   // Start the canvas game loop when PLAYING begins; stop it when PLAYING ends.
@@ -494,6 +496,8 @@ const ClearTheAirPage = () => {
         );
         if (res.error === "ALREADY_PLAYED") setAlreadyPlayed(true);
         else if (!res.success) setSaveFailed(true);
+        else
+          logFunnelEvent("GAME_COMPLETE", deviceIdRef.current, "CLEAR_THE_AIR");
       } catch {
         setSaveFailed(true);
       } finally {
@@ -571,7 +575,14 @@ const ClearTheAirPage = () => {
               </div>
 
               <button
-                onClick={() => setPhase("PLAYING")}
+                onClick={() => {
+                  logFunnelEvent(
+                    "GAME_START",
+                    deviceIdRef.current,
+                    "CLEAR_THE_AIR",
+                  );
+                  setPhase("PLAYING");
+                }}
                 className="w-full py-3 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5 border border-[#232323]"
               >
                 INSERT COIN

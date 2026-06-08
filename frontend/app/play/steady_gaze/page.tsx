@@ -38,6 +38,7 @@ import { GameErrorScreen } from "@/components/GameErrorScreen";
 import { useRouter } from "next/navigation";
 import { GameShell } from "@/components/GameShell";
 import { saveUserGameStat } from "@/utils/saveUserGameStat";
+import { logFunnelEvent } from "@/utils/logFunnelEvent";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { getTodayIST, getDailySeed, mulberry32 } from "@/utils/seedRng";
 
@@ -316,6 +317,7 @@ const SteadyGazePage = () => {
   const handleBackgroundTap = useCallback(() => {
     const state = gs.current;
     if (!state?.active) return;
+    logFunnelEvent("GAME_CLICK", deviceIdRef.current, "STEADY_GAZE");
     if (state.dotState === "catchable") {
       // Successfully caught the dot
       state.hits++;
@@ -326,7 +328,7 @@ const SteadyGazePage = () => {
       // Tapped when no dot was visible — penalty
       state.penaltyTaps++;
     }
-  }, []);
+  }, [deviceIdRef]);
 
   // When phase transitions to PLAYING: start the RAF loop and attach the global
   // tap listener. The returned cleanup function runs when PLAYING phase ends
@@ -373,6 +375,8 @@ const SteadyGazePage = () => {
         );
         if (res.error === "ALREADY_PLAYED") setAlreadyPlayed(true);
         else if (!res.success) setSaveFailed(true);
+        else
+          logFunnelEvent("GAME_COMPLETE", deviceIdRef.current, "STEADY_GAZE");
       } catch {
         setSaveFailed(true);
       } finally {
@@ -464,7 +468,14 @@ const SteadyGazePage = () => {
               </div>
 
               <button
-                onClick={() => setPhase("PLAYING")}
+                onClick={() => {
+                  logFunnelEvent(
+                    "GAME_START",
+                    deviceIdRef.current,
+                    "STEADY_GAZE",
+                  );
+                  setPhase("PLAYING");
+                }}
                 className="w-full py-3 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5 border border-[#232323]"
               >
                 BEGIN MEDITATION

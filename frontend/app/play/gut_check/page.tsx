@@ -24,6 +24,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { fetchServerGameData } from "./actions";
 import { saveUserGameStat } from "@/utils/saveUserGameStat";
+import { logFunnelEvent } from "@/utils/logFunnelEvent";
 import type { GutCheckGame } from "@/utils/generate_game";
 import { useRouter } from "next/navigation";
 import { useDeviceId } from "@/hooks/useDeviceId";
@@ -263,6 +264,7 @@ const GutCheckPage = () => {
         "web_gut_check_v1",
       );
       if (connectionResult.success) {
+        logFunnelEvent("GAME_COMPLETE", deviceIdRef.current, "GUT_CHECK");
         setPhase("RESULTS");
       } else if (connectionResult.error === "ALREADY_PLAYED") {
         router.push("/");
@@ -337,7 +339,10 @@ const GutCheckPage = () => {
               </div>
             </div>
             <button
-              onClick={() => setPhase("ANCHOR")}
+              onClick={() => {
+                logFunnelEvent("GAME_START", deviceIdRef.current, "GUT_CHECK");
+                setPhase("ANCHOR");
+              }}
               className="w-full py-3 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5 border border-[#232323]"
             >
               START GUT CHECK
@@ -356,6 +361,11 @@ const GutCheckPage = () => {
             <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={() => {
+                  logFunnelEvent(
+                    "GAME_CLICK",
+                    deviceIdRef.current,
+                    "GUT_CHECK",
+                  );
                   saveCurrentRoundSlice({ anchorGuess: true });
                   setPhase("REAL_QUESTION");
                 }}
@@ -365,6 +375,11 @@ const GutCheckPage = () => {
               </button>
               <button
                 onClick={() => {
+                  logFunnelEvent(
+                    "GAME_CLICK",
+                    deviceIdRef.current,
+                    "GUT_CHECK",
+                  );
                   saveCurrentRoundSlice({ anchorGuess: false });
                   setPhase("REAL_QUESTION");
                 }}
@@ -385,6 +400,8 @@ const GutCheckPage = () => {
               </p>
             </div>
             <div className="space-y-4">
+              {/* rounded-none h-auto: shadcn Input base has rounded-lg and a fixed h-8 — both fight the retro flat look.
+                  focus-visible:ring-0: shadcn base applies a 3px gray ring on keyboard focus — suppressed here. */}
               <Input
                 type="number"
                 value={numericInput}

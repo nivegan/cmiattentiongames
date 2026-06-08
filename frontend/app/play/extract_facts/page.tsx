@@ -21,6 +21,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { fetchServerGameData } from "./actions";
 import { saveUserGameStat } from "@/utils/saveUserGameStat";
+import { logFunnelEvent } from "@/utils/logFunnelEvent";
 import type { ExtractFactsGame } from "@/utils/generate_game";
 import { useRouter } from "next/navigation";
 import { useDeviceId } from "@/hooks/useDeviceId";
@@ -85,12 +86,18 @@ const ExtractFactsPage = () => {
             router.push("/"); // already played today — redirect home
             return;
           }
+          // Any other !success case falls through: gameData stays null, and
+          // the `!gameData` guard below renders <GameErrorScreen> implicitly.
         }
         if (response.data) {
           setGameData(response.data);
         }
+        // setIsLoading(false) is called AFTER setGameData so there is no
+        // intermediate render where isLoading=false and gameData=null, which
+        // would flash <GameErrorScreen> for one frame.
         setIsLoading(false);
       } catch {
+        // Network / server error: gameData stays null → <GameErrorScreen> renders.
         setIsLoading(false);
       }
     };
@@ -135,6 +142,11 @@ const ExtractFactsPage = () => {
         "web_extract_facts_v1",
       );
       if (dbTransaction.success) {
+        logFunnelEvent(
+          "GAME_COMPLETE",
+          deviceIdRef.current,
+          "EXTRACT_THE_FACTS",
+        );
         setPhase("COMPLETE");
       } else if (dbTransaction.error === "ALREADY_PLAYED") {
         router.push("/");
@@ -165,6 +177,9 @@ const ExtractFactsPage = () => {
   const isTakeawayValid = takeawayWordCount >= 10;
 
   if (isLoading) return <GameLoadingScreen />;
+  // Two conditions that warrant an error screen:
+  //   1. gameData is null — server action failed or returned no data
+  //   2. questions is empty — Gemini returned a game object with no MCQs (schema mismatch / partial parse)
   if (!gameData || questions.length === 0) return <GameErrorScreen />;
 
   return (
@@ -184,6 +199,7 @@ const ExtractFactsPage = () => {
           </p>
           <div className="h-2 bg-[#232323]/10 border border-[#232323]/20 p-0.5">
             <div className="h-full flex">
+              {/* Green fill advances: 1/3 → 2/3 → full across INTRO/QUIZ/TAKEAWAY+ */}
               <div
                 className={`bg-[#22C55E] transition-all duration-300 ${
                   phase === "INTRO"
@@ -193,12 +209,19 @@ const ExtractFactsPage = () => {
                       : "w-full"
                 }`}
               />
+              {/* Red-tinted remainder visually represents remaining progress */}
               <div className="flex-1 bg-[#EF4444]/30" />
             </div>
           </div>
         </div>
       )}
 
+      {/* min-h-0: flex children default to min-height:auto, which lets them grow
+          past the parent and prevents overflow-y-auto from scrolling. Explicitly
+          setting min-h-0 allows the flex item to shrink and actually overflow. */}
+      {/* paddingBottom inline style: Tailwind's largest pb-* (~96 = 24rem) isn't
+          enough on small screens to clear the absolute-positioned footer button.
+          100px inline override guarantees the last content item is always visible. */}
       <main
         ref={contentScrollRef}
         className="flex-1 overflow-y-auto px-6 py-6 scroll-smooth min-h-0"
@@ -239,7 +262,7 @@ const ExtractFactsPage = () => {
 
         {phase === "QUIZ" && currentQuestionItem && (
           <div className="space-y-5 max-w-md mx-auto">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center">
               <h3 className="font-extrabold tracking-tight text-[#8B2626] text-sm uppercase">
                 QUESTION {currentQuizIndex + 1} / {questions.length}
               </h3>
@@ -257,12 +280,17 @@ const ExtractFactsPage = () => {
                 return (
                   <button
                     key={optIdx}
-                    onClick={() =>
+                    onClick={() => {
+                      logFunnelEvent(
+                        "GAME_CLICK",
+                        deviceIdRef.current,
+                        "EXTRACT_THE_FACTS",
+                      );
                       setQuizSelections({
                         ...quizSelections,
                         [currentQuizIndex]: optIdx,
-                      })
-                    }
+                      });
+                    }}
                     className={`w-full text-left bg-[#FAF8F5] border p-3.5 shadow-[3px_3px_0px_rgba(217,205,179,0.5)] rounded-sm flex items-start gap-3 transition-all ${
                       isSelected
                         ? "border-[#8B2626] bg-[#8B2626]/5 shadow-[2px_2px_0px_#8B2626]"
@@ -276,6 +304,7 @@ const ExtractFactsPage = () => {
                           : "border-[#7C6560] bg-white text-[#7C6560]"
                       }`}
                     >
+                      {/* charCode 65 = 'A'; yields A/B/C/D labels for option indices 0/1/2/3 */}
                       {String.fromCharCode(65 + optIdx)}
                     </div>
                     <span className="text-[13px] leading-tight text-[#5C4540]">
@@ -286,6 +315,9 @@ const ExtractFactsPage = () => {
               })}
             </div>
 
+            {/* Reference panels reprint both narratives inline at reduced size/opacity
+                so the player doesn't have to scroll back to the INTRO to re-read them
+                while answering questions. Read-only; no interaction. */}
             <div className="border-t border-dashed border-[#D9CDB3] pt-4 mt-6" />
             <span className="text-[10px] font-bold tracking-widest text-[#8B2626]/80 block uppercase">
               REFERENCE PANELS:
@@ -342,6 +374,8 @@ const ExtractFactsPage = () => {
                 about this event?
               </label>
               <div className="relative">
+                {/* field-sizing-fixed: shadcn Textarea base includes field-sizing-content which auto-expands against h-32.
+                    focus-visible:ring-0: shadcn base also applies a 3px gray ring on keyboard focus — suppressed here. */}
                 <Textarea
                   value={takeawayText}
                   onChange={(e) => setTakeawayText(e.target.value)}
@@ -428,12 +462,17 @@ const ExtractFactsPage = () => {
               </div>
 
               <div className="space-y-2 text-xs font-bold">
+                {/* TAKEAWAY DEPTH: ≥20 words = "DETAILED", fewer = "BRIEF".
+                    The 10-word minimum already passed to reach this screen;
+                    20 words is a second, higher tier for display only. */}
                 <div className="flex justify-between items-center bg-[#FAF8F5] border border-[#D9CDB3] p-2.5 rounded-sm">
                   <span>TAKEAWAY DEPTH:</span>
                   <span className="text-[#8B2626]">
                     ⊙ {takeawayWordCount >= 20 ? "DETAILED" : "BRIEF"}
                   </span>
                 </div>
+                {/* BIAS RECOGNITION: binary label — "EXCELLENT" only when every
+                    MCQ was answered correctly, otherwise "IMPROVING". */}
                 <div className="flex justify-between items-center bg-[#FAF8F5] border border-[#D9CDB3] p-2.5 rounded-sm">
                   <span>BIAS RECOGNITION:</span>
                   <span className="text-[#8B2626]">
@@ -468,6 +507,7 @@ const ExtractFactsPage = () => {
                 <span className="text-[10px] font-bold tracking-widest text-[#42F56C]/60 block mb-0.5 uppercase">
                   Final Score
                 </span>
+                {/* padStart(3, "0") gives terminal-style zero-padded display: 007, 042, 120 */}
                 <span className="text-2xl font-black tracking-widest text-[#42F56C] block">
                   {String(finalComputedScore).padStart(3, "0")}
                 </span>
@@ -488,10 +528,22 @@ const ExtractFactsPage = () => {
         )}
       </main>
 
+      {/* Footer is absolute so it overlays the scrollable <main> without pushing it.
+          The linear gradient fades from opaque at the bottom to transparent at the
+          top, making the button appear to float above the scrollable content. */}
       <footer className="absolute bottom-0 inset-x-0 bg-linear-to-t from-[#FAF6F0] via-[#FAF6F0] to-[#FAF6F0]/0 px-6 pb-6 pt-8 z-20 flex justify-center">
         {phase === "INTRO" && (
           <button
-            onClick={() => setPhase("QUIZ")}
+            onClick={() => {
+              // GAME_START fires here — after the player has read the narratives
+              // and is actively choosing to begin the quiz, not on page load.
+              logFunnelEvent(
+                "GAME_START",
+                deviceIdRef.current,
+                "EXTRACT_THE_FACTS",
+              );
+              setPhase("QUIZ");
+            }}
             className="w-full max-w-md py-3.5 bg-[#8B2626] text-white font-extrabold text-xs tracking-widest uppercase rounded-sm shadow-[4px_4px_0px_#4A1212] hover:translate-x-px hover:translate-y-px hover:shadow-[3px_3px_0px_#4A1212] active:translate-x-0.75 active:translate-y-0.75 transition-all"
           >
             Start Questions
@@ -499,6 +551,9 @@ const ExtractFactsPage = () => {
         )}
 
         {phase === "QUIZ" && (
+          // pointer-events-none disables click events at the CSS level without
+          // the browser's native disabled styling — keeps visual control fully
+          // in Tailwind rather than fighting the UA stylesheet.
           <button
             disabled={!isCurrentQuizAnswered}
             onClick={() =>

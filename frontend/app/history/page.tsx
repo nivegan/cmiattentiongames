@@ -181,6 +181,7 @@ const HistoryPage = () => {
                 </p>
               </div>
               <div className="flex items-center gap-4">
+                {/* border-none: shadcn Badge base allocates 1px border space even when transparent; removing it keeps the shadow flush. */}
                 <Badge className="rounded-none h-auto border-none bg-[#232323] px-3 py-1 text-[#00FF33] font-mono text-sm shadow-[2px_2px_0px_#8B2626]">
                   {entry.score} pts
                 </Badge>
