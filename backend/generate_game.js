@@ -213,13 +213,15 @@ Expected JSON Structure:
 Date: ${today}.
 THEME AND VOICE INSTRUCTIONS:
 1. Topic Choice: Select a creative, specific, completely non-political and non-controversial real-world scene, trend, or human interest event. 
-   CRITICAL: Avoid using the literal words 'city infrastructure', 'library hours', 'community sports', or 'public space re-routing' as the primary topic. Innovate a fresh focus each run.
-2. ABSOLUTE FILTER: Do NOT include any political parties, politician names, government election disputes, polarizing social debates, or sensitive geopolitical events.
+   CRITICAL: Innovate a fresh focus each run.
+2. ABSOLUTE FILTER: Do NOT include any political parties, politician names, government election disputes, polarizing social debates, or sensitive geopolitical events by name.
 3. Style, Tone & Sentiment Variance: Write paragraphs formatted to simulate a concise local news blurb, a high-engagement social media post, or a fast tabloid snippet.
 4. THE CORE DIFFERENCE: The differences between the two paragraphs do NOT need to be numbers. Instead, focus heavily on structural sentiment swaps and perspective spins.
 5. Strict Length Constraint: Both 'paragraph_a' and 'paragraph_b' must be kept crisp and short, fitting within a standard 280-character Twitter length limit.
 6. Formatting Rule: Do NOT include any quotation marks (" or ') anywhere inside the paragraphs. 
 7. Do not accidentally take a direct quote from any tabloid, news source, or social media post.
+8. Use real work things but change names example: "company xyz hopes their new AI will make thinks easier" vs "workers are concerned about xyz's new AI policy"
+
 
 Expected JSON Structure:
 {
