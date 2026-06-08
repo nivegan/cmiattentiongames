@@ -1,56 +1,69 @@
+import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-});
+// Consistent environment setup matching your generate_game.js layout
+dotenv.config({ path: ".env.local" });
+const { GOOGLE_GENERATIVE_AI_API_KEY } = process.env;
+
+// Initialize client exactly using your configuration style
+const ai = new GoogleGenAI({ apiKey: GOOGLE_GENERATIVE_AI_API_KEY });
 
 export default async function handler(req, res) {
+  // Ensure the endpoint only handles incoming POST data
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  // userAnswers here is the short paragraph the user typed out based on their memory
-  const { scenarioId, userAnswers, correctAnswers } = req.body;
-
-  if (!userAnswers) {
-    return res
-      .status(400)
-      .json({ error: "User narrative paragraph is required." });
+    return res.status(405).json({ error: "Method Not Allowed" });
   }
 
   try {
+    const { scenarioId, correctAnswers, userAnswers } = req.body;
+
+    // Structural validation guardrail
+    if (!correctAnswers || !userAnswers) {
+      return res.status(400).json({ error: "Missing required fields: correctAnswers and userAnswers are required." });
+    }
+
+    // Construct the grading prompt
     const prompt = `
       You are an objective grading script designed to evaluate the depth of a user's takeaway from a given scenario. Your task is to cross-reference the user's remembered narrative paragraph against the ground-truth factual schema and judge how accurately the user retained the facts.
       
       Task: Cross-reference the user's remembered narrative paragraph against the ground-truth factual schema. Judge how accurately the user retained the facts.
       
-      Factual Schema (Ground Truth):
-      ${JSON.stringify(correctAnswers)}
+      Scenario ID: ${scenarioId || "Default"}
+      Target Reference Answers (Ground Truth): ${JSON.stringify(correctAnswers)}
+      Player's Provided Response: "${userAnswers}"
       
-      User's Remembered Narrative Paragraph:
-      "${userAnswers}"
+      Analyze the player's response against the target reference answers. 
+      Calculate a 'takeawayDepthScore' from 0 to 100 based on how accurately and deeply they captured the core facts.
+      Provide a brief, clear explanation for the score assigned.
       
-      Scoring Metric:
-      - Assign a "Takeaway Depth Score" from 0 to 100 based strictly on factual alignment and precision.
-      
-      Respond strictly in this JSON format:
+      Return your final response strictly as a JSON object with this exact structure:
       {
         "takeawayDepthScore": <number between 0 and 100>
+        
       }
     `;
 
+    // Generate content using the exact SDK-supported model string
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
+        // Force the model to output a verified, machine-readable JSON format
         responseMimeType: "application/json",
+        // Force deterministic, predictable output across multiple evaluations
+        temperature: 0.0,
+        seed: 42
       },
     });
 
-    const scoringResult = JSON.parse(response.text);
-    return res.status(200).json(scoringResult);
+    // Parse the validated JSON payload out of the model's text response
+    const evaluationResult = JSON.parse(response.text);
+
+    // Return the evaluated metrics back to the client
+    return res.status(200).json(evaluationResult);
+
   } catch (error) {
-    console.error("Scoring Pipeline Error:", error);
-    return res.status(500).json({ error: "Failed to evaluate depth score." });
+    console.error("Error in scoring engine:", error);
+    return res.status(500).json({ error: "Internal Server Error", message: error.message });
   }
 }
