@@ -1,17 +1,21 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY });
+const ai = new GoogleGenAI({
+  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+});
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   // userAnswers here is the short paragraph the user typed out based on their memory
   const { scenarioId, userAnswers, correctAnswers } = req.body;
 
   if (!userAnswers) {
-    return res.status(400).json({ error: 'User narrative paragraph is required.' });
+    return res
+      .status(400)
+      .json({ error: "User narrative paragraph is required." });
   }
 
   try {
@@ -36,16 +40,15 @@ export default async function handler(req, res) {
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
-        responseMimeType: 'application/json',
-      }
+        responseMimeType: "application/json",
+      },
     });
 
     const scoringResult = JSON.parse(response.text);
     return res.status(200).json(scoringResult);
-
   } catch (error) {
     console.error("Scoring Pipeline Error:", error);
     return res.status(500).json({ error: "Failed to evaluate depth score." });
