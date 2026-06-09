@@ -13,7 +13,7 @@ import type { GameMode } from "@/utils/generate_game";
 // created_at is a string (ISO format) because plain Date objects can't be
 // passed across the server/client boundary in Next.js server actions — they
 // must be serialised to a primitive type first.
-export interface HistoryEntry {
+interface HistoryEntry {
   id: string;
   game_type_id: GameMode | null; // null if the DB row has an unrecognised game type
   score: number;
@@ -23,7 +23,7 @@ export interface HistoryEntry {
 }
 
 // The full object returned by fetchHistory to the page component.
-export interface HistoryResult {
+interface HistoryResult {
   entries: HistoryEntry[];
   streak: number; // consecutive IST calendar days the user has played
 }
@@ -72,9 +72,7 @@ const computeStreak = (dates: Date[]): number => {
   return streak;
 };
 
-export const fetchHistory = async (
-  deviceId: string,
-): Promise<HistoryResult> => {
+const fetchHistory = async (deviceId: string): Promise<HistoryResult> => {
   // auth() reads the Clerk session. userId is null for anonymous users.
   const { userId } = await auth();
   // Prefer the Clerk user ID (persistent across devices); fall back to anonymous device UUID.
@@ -104,3 +102,6 @@ export const fetchHistory = async (
     streak: computeStreak(rows.map((r) => r.created_at)),
   };
 };
+
+export type { HistoryEntry, HistoryResult };
+export { fetchHistory };
