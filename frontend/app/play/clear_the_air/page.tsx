@@ -332,9 +332,15 @@ const ClearTheAirPage = () => {
 
         if (b.size >= BUBBLE_MAX_SIZE) {
           b.alive = false;
-          if (b.type === "distraction") state.graysAutoBurst++;
-          state.perfWindow.push(0);
-          if (state.perfWindow.length > PERF_WINDOW) state.perfWindow.shift();
+          // Only a gray bubble maxing out is a failure — the player should have
+          // cleared it, so it counts as a bad outcome (0) for adaptive difficulty.
+          // A red diamond maxing out is the CORRECT outcome (never click red),
+          // so letting it expire must not count against the player.
+          if (b.type === "distraction") {
+            state.graysAutoBurst++;
+            state.perfWindow.push(0);
+            if (state.perfWindow.length > PERF_WINDOW) state.perfWindow.shift();
+          }
           continue;
         }
 

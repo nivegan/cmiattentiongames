@@ -8,7 +8,7 @@
 // PrismaClient instances, you open multiple pools — wasting connections and
 // potentially hitting the database's max-connection limit.
 //
-// WHY GLOBALTTHIS?
+// WHY GLOBALTHIS?
 // Next.js dev mode re-evaluates every module on each file-save (hot-reload).
 // Without the globalThis trick, a new PrismaClient (and new pool) would be
 // created on every reload. By stashing the instance on globalThis (the global

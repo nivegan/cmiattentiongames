@@ -18,6 +18,7 @@ import yargs from "yargs"; // CLI argument parser — used only when run as a sc
 import { hideBin } from "yargs/helpers"; // strips "node script.ts" from process.argv
 import dotenv from "dotenv";
 import { prisma } from "./prismaInit";
+import { getTodayIST } from "./seedRng";
 
 // No-op in the Next.js runtime (the framework loads .env.local automatically),
 // but required when this file is executed directly as a CLI script.
@@ -215,15 +216,15 @@ const generate = async (
     argv.mode ||
     "EXTRACT_THE_FACTS") as GameMode;
 
-  const now = new Date();
-  // getTimezoneOffset() returns the local UTC offset in minutes (negative for
-  // UTC+ zones). Multiplying by 60000 converts to milliseconds.
-  // Subtracting this from now.getTime() effectively converts the timestamp
-  // to "local midnight UTC" — i.e., today's date string in the server's local tz.
-  const offset = now.getTimezoneOffset() * 60000;
-  const today = new Date(now.getTime() - offset).toISOString().split("T")[0];
-  // Use UTC midnight as the scheduled_for value so the unique key (mode, scheduled_for)
-  // is consistent regardless of server timezone.
+  // The platform's "day" rolls over at IST midnight — the same boundary the
+  // daily play lock uses (utils/getCurrentDayRange.ts). getTodayIST() returns
+  // today's date string in IST (e.g. "2026-06-10"). Deriving this from the
+  // server's own timezone instead would desync content from the lock: on a UTC
+  // server, players between IST midnight and UTC midnight (00:00–05:30 IST)
+  // would be served the previous day's content under a fresh daily lock.
+  const today = getTodayIST();
+  // Store the IST date at UTC midnight as the scheduled_for value so the unique
+  // key (mode, scheduled_for) is consistent regardless of server timezone.
   const todayDate = new Date(`${today}T00:00:00.000Z`);
 
   try {
@@ -435,12 +436,15 @@ Expected JSON Structure:
       console.error("Validation Details:", JSON.stringify(err.issues, null, 2));
     }
     throw err; // re-throw so the calling server action can return an error response
-  } finally {
-    // Always disconnect from the DB, even if an error occurred. This ensures
-    // the connection pool is released when running as a CLI script.
-    // In the web runtime this is a no-op (Next.js manages the connection lifecycle).
-    await prisma.$disconnect();
   }
+  // Deliberately NO prisma.$disconnect() here. `prisma` is the app-wide
+  // singleton (utils/prismaInit.ts) shared by every server action. With the
+  // pg driver adapter, $disconnect() actually ends the underlying connection
+  // pool — so disconnecting after each content fetch (including cache hits)
+  // would yank the pool out from under any concurrent request mid-query and
+  // force a full reconnect on the next one. If a CLI wrapper ever invokes
+  // generate() directly, that wrapper must call prisma.$disconnect() itself
+  // when done so the Node process can exit cleanly.
 };
 
 export { generate };
