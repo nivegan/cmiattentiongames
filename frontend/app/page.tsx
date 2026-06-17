@@ -53,6 +53,10 @@ const HomePage = () => {
             <MenubarItem asChild>
               <Link href="/play/clear_the_air">Clear the Air</Link>
             </MenubarItem>
+
+            <MenubarItem asChild>
+              <Link href="/play/mental_reflex">Mental Reflex</Link>
+            </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
       </Menubar>

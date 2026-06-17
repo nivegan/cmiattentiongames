@@ -15,7 +15,10 @@
 import { ArrowLeft } from "lucide-react";
 
 interface GameShellProps {
-  title: string; // centre of the header (e.g. "GUT CHECK")
+  // Centre of the header. Usually a plain string game title (e.g. "GUT CHECK"),
+  // but accepts any node so a game can render a custom centred element there
+  // (e.g. Mental Reflex's terminal-style countdown box).
+  title: string | React.ReactNode;
   onBack: () => void; // called when the ← back button is pressed
   // Right side of the header. Pass a custom element for timers / round counters,
   // or omit to show the decorative animated spinner fallback.
