@@ -1,0 +1,25 @@
+{
+  "vector_mcq": {
+    "question": "Which of these elements utilizes a definitive dark design pattern meant to subvert user autonomy?",
+    "options": {
+      "text": "A popup banner warning that 'Only 3 items remain' to create artificial scarcity.",
+      "ui": "A subscription cancellation flow where the 'Cancel' button is rendered in low-contrast, tiny grey text on a white background, while 'Keep Membership' is a bright, high-contrast button.",
+      "ad": "A video advertisement that uses loud, fast-paced audio to demand immediate viewer attention.",
+      "graph": "A bar chart comparing growth metrics that omits the zero-baseline to emphasize minor quarterly fluctuations."
+    },
+    "correct_vector": "ui",
+    "correct_vector_index": 1
+  },
+  "manipulation_mcq": {
+    "question": "Which deceptive technique is being leveraged in the correct interface example above?",
+    "options": [
+      "Confirmshaming",
+      "Visual Interference",
+      "Hidden Costs",
+      "Forced Continuity"
+    ],
+    "correct_manipulation_name": "Visual Interference",
+    "correct_manipulation_index": 1
+  },
+  "short_explanation": "Visual Interference occurs when a design deliberately misleads or distracts the user from their goal through formatting choices. While scarcity, biased data, and loud ads are aggressive marketing, they do not inherently subvert the interface's functional navigation like the intentional obscuring of the cancellation button."
+}
