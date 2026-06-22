@@ -14,28 +14,31 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 // Absolute fallback file writer path
 const EXPLICIT_OUTPUT_PATH = '/Users/urjaswichakraborty/cmiattentiongames/dark_design.json';
 
+// Reusable schema helper to enforce the strict 150-character limit
+const LimitedString = z.string().max(150, "Content exceeds the strict 150-character limit");
+
 // ==========================================
-// 1. UPDATED VALIDATION SCHEMA
+// 1. DYNAMIC VALIDATION SCHEMA
 // ==========================================
 const DarkDesignSchema = z.object({
   vector_mcq: z.object({
-    question: z.string(),
+    question: LimitedString,
     options: z.object({
-      text: z.string(),
-      ui: z.string(),
-      ad: z.string(),
-      graph: z.string()
+      text: LimitedString,   // Strictly limited to 150 characters
+      ui: LimitedString,     // Strictly limited to 150 characters
+      ad: LimitedString,     // Strictly limited to 150 characters
+      graph: LimitedString   // Strictly limited to 150 characters
     }),
     correct_vector: z.enum(["text", "ui", "ad", "graph"]),
     correct_vector_index: z.preprocess((val) => parseInt(val, 10), z.number().min(0).max(3))
   }),
   manipulation_mcq: z.object({
-    question: z.string(),
-    options: z.array(z.string()).length(4),
-    correct_manipulation_name: z.string(),
+    question: LimitedString,
+    options: z.array(LimitedString).length(4),
+    correct_manipulation_name: LimitedString,
     correct_manipulation_index: z.preprocess((val) => parseInt(val, 10), z.number().min(0).max(3))
   }),
-  short_explanation: z.string()
+  short_explanation: LimitedString
 });
 
 // ==========================================
@@ -90,44 +93,50 @@ ANTI-REPETITION FILTER (MEMORY LOOP):
 Avoid themes matching or closely relating to these recent topics:
 [${recentTopics.map(t => `'${t}'`).join(', ')}]
 
+CRITICAL CHARACTER & LANGUAGE CONSTRAINTS:
+1. Every single text value you generate—including the values for text, ui, ad, and graph—MUST be under a strict maximum length of 150 characters. Be exceptionally short and punchy.
+2. Use clear, plain, everyday language. Avoid complex, academic, or niche industry buzzwords (do not use terms like "vector", "multimodal", "asymmetric layout", or technical UX jargon) in the questions and options so it is easy for anyone to read.
+
 CORE GAME MECHANICAL RULES:
 1. 'vector_mcq' structural requirement:
-   - Provide a question asking the user to pinpoint which element contains a definitive dark design pattern or deceptive manipulation technique.
-   - You must generate exactly 4 options under the keys "text", "ui", "ad", and "graph".
-   - Each option must contain a very short, realistic scenario text description of what that medium displays.
-   - CRITICAL DIFFICULTY TWEAK: To maximize difficulty, 2 or 3 of the wrong options SHOULD look borderline deceptive, shady, or include intense marketing/persuasion "grey-area" techniques (e.g., strong urgency wording, slightly biased but technically true charts, intense promotional copywriting). They do not have to be transparent or honest. However, exactly ONE option must cross the line completely into an objective, established dark design pattern.
-   - Set 'correct_vector' to the key name ("text", "ui", "ad", or "graph") that contains this true dark pattern, and 'correct_vector_index' to its 0-based array position matching how your frontend reads objects.
+   - Provide an easy-to-read question asking the user to find which option uses a trick or deceptive setup.
+   - Generate exactly 4 dynamic options under keys "text", "ui", "ad", and "graph". Do not reuse example strings. 
+   - Each individual option value MUST be a highly realistic micro-scenario description under 150 characters.
+   - TEXT FOCUS TWEAK: For the "text" key option, format it explicitly as a text-only communication medium such as a headline, tweet, notification banner text, or email subject line.
+   - To make it challenging, 2 or 3 of the wrong options should display slightly pushy marketing, high-pressure sale words, or slightly uneven chart setups. However, exactly ONE option must cross the line completely into an objective, deceptive trick pattern.
+   - Set 'correct_vector' to the key name ("text", "ui", "ad", or "graph") holding that true deceptive trick, and 'correct_vector_index' to its 0-based array position (0-3).
 
 2. 'manipulation_mcq' structural requirement:
-   - Provide a question asking which specific dark design/deceptive technique is being used in that correct option.
-   - Provide 4 manipulation technique names as options (e.g., "Confirmshaming", "Visual Interference", "Truncated Y-Axis", "Roach Motel").
-   - CRITICAL DISTRACTOR CONSTRAINT: The options must be closely related to the context of the answer to make detection challenging. If the deceptive option is a cookie banner using Visual Interference, the other options should be related design terms (like "Confirmshaming" or "Trick Questions"). Do not use highly disconnected terms (like "Sunk Cost Fallacy" or "Bait and Switch" for a graph scenario).
+   - Provide a plain question asking which specific trick name is being used in the answer chosen above.
+   - Provide exactly 4 clear trick names as strings inside a plain array layout for 'options'. 
+   - The names must be related to each other in context so the choice isn't obvious, but keep the language straightforward.
+   - Set 'correct_manipulation_name' to the exact string matching the correct trick from the array, and 'correct_manipulation_index' to its 0-based index position (0, 1, 2, or 3).
 
 3. 'short_explanation' requirement:
-   - A short, concise string explaining exactly what the correct technique name is for the second MCQ, and precisely why it fits the deceptive option in the first MCQ over the other "grey-area" distractions.
+   - Provide a plain string under 150 characters explaining why this trick fits the chosen option over the other pushy marketing choices.
 
 Do not wrap the JSON output in markdown backticks or code blocks.
 
 Expected JSON Structure:
 {
   "vector_mcq": {
-    "question": "Which of these elements utilizes a deceptive dark design pattern?",
+    "question": "Which of these everyday scenarios uses a deceptive trick?",
     "options": {
-      "text": "<Short description of a borderline aggressive text announcement>",
-      "ui": "<Short description of a manipulative UI layout using true visual trickery>",
-      "ad": "<Short description of a pushy advertisement>",
-      "graph": "<Short description of a slightly biased but technically legal data graph>"
+      "text": "<Dynamic short headline, tweet, or notification alert under 150 chars>",
+      "ui": "<Dynamic short button trick description under 150 chars>",
+      "ad": "<Dynamic short online deal blurb under 150 chars>",
+      "graph": "<Dynamic short factual chart description under 150 chars>"
     },
     "correct_vector": "ui",
     "correct_vector_index": 1
   },
   "manipulation_mcq": {
-    "question": "Which deceptive technique is being leveraged in the interface example above?",
+    "question": "What is the name of the trick used in the setup above?",
     "options": ["Confirmshaming", "Visual Interference", "Sneak into Basket", "Roach Motel"],
     "correct_manipulation_name": "Visual Interference",
     "correct_manipulation_index": 1
   },
-  "short_explanation": "While the other options use aggressive marketing or persuasion tactics, the UI block explicitly crosses the line into Visual Interference by hiding the choice to opt-out behind stylized text formatting to break user intent."
+  "short_explanation": "The website layout uses a trick by making the 'Accept All' option huge while hiding the decline choice inside regular text."
 }`;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GOOGLE_GENERATIVE_AI_API_KEY}`;
