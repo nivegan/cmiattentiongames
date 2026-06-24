@@ -1,29 +1,35 @@
 "use client";
 // history/page.tsx
-// Displays the user's complete game history: a list of past scores, the current
-// streak, and a conversion banner prompting anonymous users to create an account.
+// Shows the signed-in user's game history grouped by IST calendar day. Each day
+// is a card with the date, an "X/N" completion count (games played / daily total),
+// a progress bar, and a pill per game played. A "Your Progress" footer shows the
+// lifetime games-completed count.
 //
-// "use client" is required because this page reads from localStorage (to get the
-// anonymous device ID) and uses Clerk's useAuth() hook — both browser-only APIs.
+// "use client" is required because this page reads from localStorage (the anonymous
+// device id, passed through to the server action) and uses Clerk's useAuth() hook —
+// both browser-only APIs.
 //
-// DATA FLOW:
-//   1. On mount, wait for Clerk to finish loading (isLoaded)
-//   2. Read the device ID from localStorage
-//   3. Call fetchHistory(deviceId) server action — it returns all past scores + streak
-//   4. Render the list; show conversion banner if user is anonymous and has entries
+// History is signed-in only: anonymous visitors see a "Sign in to save history"
+// prompt (Clerk modal) and no history is ever fetched for them.
+//
+// DATA FLOW (signed-in):
+//   1. Wait for Clerk to finish loading (isLoaded)
+//   2. Read the device id from localStorage
+//   3. Call fetchHistory(deviceId) — returns day-grouped plays + totals
+//   4. Render the day cards + "Your Progress" footer
 
-import { useAuth, SignUpButton } from "@clerk/nextjs";
+import { useAuth, SignInButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Calendar, CheckCircle2, ArrowLeft } from "lucide-react";
 import { fetchHistory } from "./actions";
-import type { HistoryResult } from "./actions";
+import type { HistoryResult } from "./types";
 import type { GameMode } from "@/utils/generate_game";
-import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 
-// Maps each game mode string to its human-readable display name.
-// Partial<Record<...>> means not every GameMode key is required — modes without
-// a label yet (READ_BETWEEN_DESIGNS, MENTAL_REFLEX) would fall through to the
-// raw game_type_id string or "Unknown" in the render below.
+// Maps each game mode to its human-readable pill label. Partial<Record<...>>
+// means a mode without a label falls through to the raw id / "Unknown".
 const GAME_LABELS: Partial<Record<GameMode, string>> = {
   GUT_CHECK: "Gut Check",
   EXTRACT_THE_FACTS: "Extract Facts",
@@ -33,28 +39,36 @@ const GAME_LABELS: Partial<Record<GameMode, string>> = {
   MENTAL_REFLEX: "Mental Reflex",
 };
 
+// Formats an IST date key ("2026-01-15") as e.g. "Mon, Jan 15". The key is
+// already an IST calendar date, so appending T00:00:00 (local) and formatting
+// without a timeZone keeps the same day — no timezone juggling needed.
+const formatDay = (dateKey: string): string =>
+  new Date(`${dateKey}T00:00:00`).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+
 const HistoryPage = () => {
   // isLoaded: true once Clerk has finished checking for an active session
   // isSignedIn: true if the user is authenticated
   const { isSignedIn, isLoaded } = useAuth();
 
-  // data: the entries + streak returned by fetchHistory (null until loaded)
   const [data, setData] = useState<HistoryResult | null>(null);
-  // loading: true while the fetchHistory call is in-flight
   const [loading, setLoading] = useState(true);
-  // loadError: true if fetchHistory threw an unexpected error
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    // Wait until Clerk has determined the session state before fetching.
-    // If we fetch before isLoaded, userId in the server action may be null
-    // even for a signed-in user (Clerk hasn't hydrated yet).
+    // Wait until Clerk has determined the session state before deciding anything.
     if (!isLoaded) return;
+
+    // Signed-out users never load history — they get the sign-in prompt instead.
+    // No setState needed: the loading-screen guard below is gated on isSignedIn,
+    // so the prompt renders for them regardless of the `loading` flag.
+    if (!isSignedIn) return;
 
     const load = async () => {
       try {
-        // localStorage is browser-only — safe inside useEffect.
-        // ?? "" falls back to an empty string if the key doesn't exist yet.
         const deviceId =
           localStorage.getItem("meta_mind_global_device_id") ?? "";
         const result = await fetchHistory(deviceId);
@@ -62,143 +76,170 @@ const HistoryPage = () => {
       } catch {
         setLoadError(true);
       } finally {
-        // Always set loading to false so the loading spinner goes away,
-        // even if the fetch failed.
         setLoading(false);
       }
     };
     load();
-  }, [isLoaded]); // re-run if isLoaded changes (typically only once: false → true)
+  }, [isLoaded, isSignedIn]);
 
-  // Show loading spinner while Clerk or fetchHistory is still in progress
-  if (!isLoaded || loading) {
+  // Wait for Clerk, then show the loading view while signed-in history loads.
+  if (!isLoaded || (isSignedIn && loading)) {
     return (
-      <div className="min-h-screen bg-[#FAF6F0] font-mono flex items-center justify-center">
-        <p className="text-[#232323]">Loading...</p>
+      <div className="min-h-screen bg-[#FAF6F0] flex items-center justify-center">
+        <p className="text-stone-500">Loading…</p>
       </div>
     );
   }
 
-  // Show an inline retry UI if the fetch failed (instead of a full GameErrorScreen,
-  // since this page is outside the game card layout)
+  // Signed-out: prompt to sign in (opens Clerk's modal in place). No history
+  // is fetched or shown for anonymous visitors.
+  if (!isSignedIn) {
+    return (
+      <div className="min-h-screen bg-[#FAF6F0] flex items-center justify-center p-6">
+        <div className="text-center space-y-6">
+          <h1 className="font-serif font-bold text-2xl text-[#232323]">
+            Sign in to save history
+          </h1>
+          <SignInButton mode="modal">
+            <Button className="rounded-full bg-[#8B2626] text-white px-6 hover:bg-[#732020] cursor-pointer">
+              Sign In
+            </Button>
+          </SignInButton>
+        </div>
+      </div>
+    );
+  }
+
+  // Inline retry UI if the fetch failed.
   if (loadError) {
     return (
-      <div className="min-h-screen bg-[#FAF6F0] font-mono flex items-center justify-center p-8">
+      <div className="min-h-screen bg-[#FAF6F0] flex items-center justify-center p-6">
         <div className="text-center space-y-4">
-          <p className="text-xs font-bold tracking-widest text-[#8B2626] uppercase">
-            Failed to load history
-          </p>
-          <button
+          <p className="text-[#8B2626] font-medium">Failed to load history.</p>
+          <Button
             onClick={() => window.location.reload()}
-            className="text-xs font-bold underline text-[#232323]"
+            className="rounded-full bg-[#8B2626] text-white px-6 hover:bg-[#732020] cursor-pointer"
           >
-            RETRY
-          </button>
+            Retry
+          </Button>
         </div>
       </div>
     );
   }
 
-  // Safely unwrap data with fallback defaults. data should always be non-null
-  // here (loading is false and no error), but ?? guards against unexpected null.
-  const entries = data?.entries ?? [];
-  const streak = data?.streak ?? 0;
+  const days = data?.days ?? [];
+  const dailyTotal = data?.dailyTotal ?? 0;
+  const gamesCompleted = data?.gamesCompleted ?? 0;
+  const hasEntries = data?.hasEntries ?? false;
 
   return (
-    <div className="min-h-screen bg-[#FAF6F0] font-mono p-8">
-      {/* Conversion banner — shown only to anonymous users who already have entries.
-          If they're already signed in, or have no history yet, this is hidden. */}
-      {!isSignedIn && entries.length > 0 && (
-        <div className="mb-6 border-2 border-[#8B2626] shadow-[4px_4px_0px_#8B2626] bg-white p-4 flex items-center justify-between gap-4 flex-wrap">
-          <p className="text-[#232323] text-sm">
-            {streak > 0 && (
-              <span className="font-bold">
-                You&apos;re on a {streak}-day streak!{" "}
-              </span>
-            )}
-            Create an account to make sure your Kalari history is saved across
-            devices.
-          </p>
-          <SignUpButton mode="modal">
-            <button className="bg-[#8B2626] text-white px-4 py-1.5 shadow-[2px_2px_0px_#232323] border-2 border-[#232323] hover:translate-x-px hover:translate-y-px hover:shadow-[1px_1px_0px_#232323] transition-all font-mono uppercase tracking-wider text-xs whitespace-nowrap cursor-pointer">
-              Save Progress
-            </button>
-          </SignUpButton>
-        </div>
-      )}
-
-      <h1 className="text-2xl font-bold text-[#232323] mb-6 tracking-widest uppercase border-b-2 border-[#232323] pb-2">
-        History
-      </h1>
-
-      {entries.length === 0 ? (
-        <div className="text-center py-16">
-          <p className="text-[#232323] opacity-60 mb-6 text-sm">
-            No games played yet.
-          </p>
-          <Link
-            href="/"
-            className="inline-block bg-[#8B2626] text-white px-6 py-2 shadow-[4px_4px_0px_#232323] border-2 border-[#232323] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_#232323] transition-all uppercase tracking-wider text-sm"
+    <div className="min-h-screen bg-[#FAF6F0]">
+      <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
+        {/* Header: back arrow + serif title + subtitle */}
+        <div className="flex items-center gap-3 mb-2">
+          <Button
+            asChild
+            variant="ghost"
+            size="icon"
+            className="rounded-xl bg-stone-200/60 hover:bg-stone-200 text-[#232323]"
           >
-            Play a Game
-          </Link>
-          {!isSignedIn && (
-            <div className="mt-8 border-2 border-[#232323] shadow-[4px_4px_0px_#232323] bg-white p-4 max-w-sm mx-auto text-center">
-              <p className="text-[#232323] text-sm mb-3">
-                Create an account to save your progress across devices.
-              </p>
-              <SignUpButton mode="modal">
-                <button className="bg-[#8B2626] text-white px-4 py-1.5 shadow-[2px_2px_0px_#232323] border-2 border-[#232323] hover:translate-x-px hover:translate-y-px hover:shadow-[1px_1px_0px_#232323] transition-all font-mono uppercase tracking-wider text-xs cursor-pointer">
-                  Create Account
-                </button>
-              </SignUpButton>
-            </div>
-          )}
+            <Link href="/" aria-label="Back to home">
+              <ArrowLeft className="size-5" />
+            </Link>
+          </Button>
+          <div>
+            <h1 className="font-serif font-bold text-3xl text-[#232323] leading-tight">
+              Practice History
+            </h1>
+            <p className="text-base text-stone-500">
+              Your critical thinking journey
+            </p>
+          </div>
         </div>
-      ) : (
-        <div className="space-y-2">
-          {entries.map((entry) => (
-            <div
-              key={entry.id}
-              className="border-2 border-[#232323] shadow-[4px_4px_0px_#232323] bg-white p-4 flex items-center justify-between"
-            >
-              <div>
-                <p className="text-[#232323] font-bold uppercase tracking-wider text-sm">
-                  {/* Look up the human-readable label; fall back to the raw
-                      game_type_id string if unlabelled, or "Unknown" if null */}
-                  {(entry.game_type_id && GAME_LABELS[entry.game_type_id]) ??
-                    entry.game_type_id ??
-                    "Unknown"}
-                </p>
-                <p className="text-[#232323] opacity-60 text-xs mt-0.5">
-                  {/* Format the UTC ISO string in IST for display */}
-                  {new Date(entry.created_at).toLocaleDateString("en-IN", {
-                    timeZone: "Asia/Kolkata",
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
-                </p>
-              </div>
-              <div className="flex items-center gap-4">
-                {/* border-none: shadcn Badge base allocates 1px border space even when transparent; removing it keeps the shadow flush. */}
-                <Badge className="rounded-none h-auto border-none bg-[#232323] px-3 py-1 text-[#00FF33] font-mono text-sm shadow-[2px_2px_0px_#8B2626]">
-                  {entry.score} pts
-                </Badge>
-                <span
-                  className={`text-xs uppercase tracking-wider font-bold ${
-                    entry.is_success
-                      ? "text-[#8B2626]"
-                      : "text-[#232323] opacity-40"
-                  }`}
+
+        {hasEntries ? (
+          <>
+            {days.map((day) => {
+              const complete = dailyTotal > 0 && day.playedCount === dailyTotal;
+              return (
+                <div
+                  key={day.dateKey}
+                  className="rounded-2xl border border-stone-200 bg-[#FBF8F2] px-5 py-4 space-y-3"
                 >
-                  {entry.is_success ? "WIN" : "LOSS"}
-                </span>
+                  {/* Top row: date + X/N completion */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="size-5 text-stone-400" />
+                      <span className="text-lg text-[#232323]">
+                        {formatDay(day.dateKey)}
+                      </span>
+                    </div>
+                    <div
+                      className={`flex items-center gap-1.5 text-base ${
+                        complete ? "text-[#8B2626]" : "text-stone-500"
+                      }`}
+                    >
+                      {complete && <CheckCircle2 className="size-5" />}
+                      <span>
+                        {day.playedCount}/{dailyTotal}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Completion progress bar (maroon fill on light track) */}
+                  <Progress
+                    value={
+                      dailyTotal > 0 ? (day.playedCount / dailyTotal) * 100 : 0
+                    }
+                    className="h-2 bg-stone-200 *:data-[slot=progress-indicator]:bg-[#8B2626]"
+                  />
+
+                  {/* Games played that day */}
+                  <div className="space-y-2">
+                    <p className="text-sm text-stone-500">Games played:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {day.games.map((g) => (
+                        <span
+                          key={g.id}
+                          className="rounded-full bg-[#F0E3E3] px-3 py-1 text-sm font-medium text-[#8B2626]"
+                        >
+                          {(g.gameMode && GAME_LABELS[g.gameMode]) ??
+                            g.gameMode ??
+                            "Unknown"}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* "Your Progress" footer — single lifetime stat */}
+            <div className="rounded-2xl bg-[#F3EDE3] px-6 py-8">
+              <h2 className="font-serif font-bold text-2xl text-[#232323] mb-6">
+                Your Progress
+              </h2>
+              <div className="text-center">
+                <p className="font-serif font-bold text-4xl text-[#8B2626]">
+                  {gamesCompleted}
+                </p>
+                <p className="text-stone-500 text-sm mt-1">Games Completed</p>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          </>
+        ) : (
+          // Empty state — signed-in user with no plays yet
+          <div className="text-center py-16 space-y-6">
+            <p className="text-stone-500">No games played yet.</p>
+            <Button
+              asChild
+              className="rounded-full bg-[#8B2626] text-white px-6 hover:bg-[#732020]"
+            >
+              <Link href="/">Play a Game</Link>
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

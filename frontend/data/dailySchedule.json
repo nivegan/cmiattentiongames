@@ -1,0 +1,11 @@
+{
+  "schedule": {
+    "monday": ["extract_facts", "mental_reflex"],
+    "tuesday": ["gut_check", "steady_gaze"],
+    "wednesday": ["read_designs", "clear_air"],
+    "thursday": ["extract_facts", "steady_gaze"],
+    "friday": ["gut_check", "mental_reflex"],
+    "saturday": ["read_designs", "clear_air"],
+    "sunday": ["gut_check", "mental_reflex"]
+  }
+}

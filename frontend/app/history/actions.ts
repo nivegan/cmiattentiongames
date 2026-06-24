@@ -8,25 +8,22 @@ import { auth } from "@clerk/nextjs/server";
 import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
 import { prisma } from "@/utils/prismaInit";
 import type { GameMode } from "@/utils/generate_game";
+// Types live in ./types (not here) because a "use server" file must export only
+// async server actions — see the note in types.ts.
+import type { DayGame, DayGroup, HistoryResult } from "./types";
 
-// Shape of a single score row returned from the DB.
-// created_at is a string (ISO format) because plain Date objects can't be
-// passed across the server/client boundary in Next.js server actions — they
-// must be serialised to a primitive type first.
-interface HistoryEntry {
-  id: string;
-  game_type_id: GameMode | null; // null if the DB row has an unrecognised game type
-  score: number;
-  is_success: boolean;
-  created_at: string; // ISO 8601 string, e.g. "2026-06-05T12:00:00.000Z"
-  difficulty_band: number;
-}
-
-// The full object returned by fetchHistory to the page component.
-interface HistoryResult {
-  entries: HistoryEntry[];
-  streak: number; // consecutive IST calendar days the user has played
-}
+// The games that count toward a "full day". The denominator in the per-day
+// "X/N" completion count is derived from this list's length, so adding a new
+// daily game here is the only change needed to update the count everywhere.
+// READ_BETWEEN_DESIGNS is excluded because it isn't playable yet.
+const DAILY_GAME_MODES: GameMode[] = [
+  "GUT_CHECK",
+  "EXTRACT_THE_FACTS",
+  "STEADY_GAZE",
+  "CLEAR_THE_AIR",
+  "MENTAL_REFLEX",
+];
+const DAILY_TOTAL = DAILY_GAME_MODES.length;
 
 // Converts a Date object to an IST calendar date string like "2026-06-05".
 // Used to group play timestamps by IST day when computing the streak.
@@ -79,7 +76,14 @@ const fetchHistory = async (deviceId: string): Promise<HistoryResult> => {
   const identifier = userId || deviceId;
 
   // Return empty data rather than querying with a null/empty identifier.
-  if (!identifier) return { entries: [], streak: 0 };
+  if (!identifier)
+    return {
+      days: [],
+      streak: 0,
+      dailyTotal: DAILY_TOTAL,
+      gamesCompleted: 0,
+      hasEntries: false,
+    };
 
   // Convert the identifier to a DB-safe UUID (Clerk IDs are not valid UUIDs).
   const dbUuid = safeFormatToUuid(identifier);
@@ -90,18 +94,36 @@ const fetchHistory = async (deviceId: string): Promise<HistoryResult> => {
     orderBy: { created_at: "desc" },
   });
 
+  // Bucket plays into IST calendar days. Map iteration order follows insertion
+  // order, and rows arrive newest-first, so `days` ends up newest-day-first.
+  // The daily play lock already prevents replaying a mode on the same day, but
+  // we dedupe defensively so a stray duplicate can't inflate the count or pills.
+  const dayMap = new Map<string, { games: DayGame[]; seen: Set<string> }>();
+  for (const r of rows) {
+    const key = toISTDateKey(r.created_at);
+    const gameMode = r.game_type_id ?? null;
+    const bucket = dayMap.get(key) ?? { games: [], seen: new Set<string>() };
+    const modeKey = gameMode ?? "__null__"; // bucket null-typed rows together
+    if (!bucket.seen.has(modeKey)) {
+      bucket.seen.add(modeKey);
+      bucket.games.push({ id: r.id, gameMode });
+    }
+    dayMap.set(key, bucket);
+  }
+
+  const days: DayGroup[] = Array.from(dayMap, ([dateKey, b]) => ({
+    dateKey,
+    games: b.games,
+    playedCount: Math.min(b.games.length, DAILY_TOTAL),
+  }));
+
   return {
-    entries: rows.map((r) => ({
-      id: r.id,
-      game_type_id: r.game_type_id ?? null, // ?? null: coerce undefined to null for the type
-      score: r.score,
-      is_success: r.is_success,
-      created_at: r.created_at.toISOString(), // Date → string for serialisation across the boundary
-      difficulty_band: r.difficulty_band,
-    })),
+    days,
     streak: computeStreak(rows.map((r) => r.created_at)),
+    dailyTotal: DAILY_TOTAL,
+    gamesCompleted: rows.length,
+    hasEntries: rows.length > 0,
   };
 };
 
-export type { HistoryEntry, HistoryResult };
 export { fetchHistory };
