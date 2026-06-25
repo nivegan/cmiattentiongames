@@ -16,6 +16,8 @@ const EXPLICIT_OUTPUT_PATH = '/Users/urjaswichakraborty/cmiattentiongames/dark_d
 
 // Reusable schema helper to enforce the strict 150-character limit
 const LimitedString = z.string().max(150, "Content exceeds the strict 150-character limit");
+// Strictly capped at 200 characters to ensure concise explanation delivery
+const ExplanationString = z.string().max(200, "Explanation exceeds the strict 200-character limit");
 
 // ==========================================
 // 1. DYNAMIC VALIDATION SCHEMA
@@ -24,21 +26,26 @@ const DarkDesignSchema = z.object({
   vector_mcq: z.object({
     question: LimitedString,
     options: z.object({
-      text: LimitedString,   // Strictly limited to 150 characters
-      ui: LimitedString,     // Strictly limited to 150 characters
-      ad: LimitedString,     // Strictly limited to 150 characters
-      graph: LimitedString   // Strictly limited to 150 characters
+      text: LimitedString,
+      ui: LimitedString,
+      ad: LimitedString,
+      graph: LimitedString
     }),
     correct_vector: z.enum(["text", "ui", "ad", "graph"]),
     correct_vector_index: z.preprocess((val) => parseInt(val, 10), z.number().min(0).max(3))
   }),
   manipulation_mcq: z.object({
     question: LimitedString,
-    options: z.array(LimitedString).length(4),
-    correct_manipulation_name: LimitedString,
-    correct_manipulation_index: z.preprocess((val) => parseInt(val, 10), z.number().min(0).max(3))
+    options: z.object({
+      a: LimitedString,
+      b: LimitedString,
+      c: LimitedString,
+      d: LimitedString
+    }),
+    correct_vector: z.enum(["a", "b", "c", "d"]),
+    correct_vector_index: z.preprocess((val) => parseInt(val, 10), z.number().min(0).max(3))
   }),
-  short_explanation: LimitedString
+  short_explanation: ExplanationString 
 });
 
 // ==========================================
@@ -94,26 +101,27 @@ Avoid themes matching or closely relating to these recent topics:
 [${recentTopics.map(t => `'${t}'`).join(', ')}]
 
 CRITICAL CHARACTER & LANGUAGE CONSTRAINTS:
-1. Every single text value you generate—including the values for text, ui, ad, and graph—MUST be under a strict maximum length of 150 characters. Be exceptionally short and punchy.
-2. Use clear, plain, everyday language. Avoid complex, academic, or niche industry buzzwords (do not use terms like "vector", "multimodal", "asymmetric layout", or technical UX jargon) in the questions and options so it is easy for anyone to read.
+1. Questions and individual options (text, ui, ad, graph, a, b, c, d) MUST be under a strict maximum length of 150 characters.
+2. The 'short_explanation' string MUST be under a strict maximum length of 200 characters. 
+3. Use clear, plain, everyday language. Avoid complex, academic, or niche industry buzzwords.
 
 CORE GAME MECHANICAL RULES:
 1. 'vector_mcq' structural requirement:
    - Provide an easy-to-read question asking the user to find which option uses a trick or deceptive setup.
-   - Generate exactly 4 dynamic options under keys "text", "ui", "ad", and "graph". Do not reuse example strings. 
+   - Generate exactly 4 dynamic options under keys "text", "ui", "ad", and "graph".
    - Each individual option value MUST be a highly realistic micro-scenario description under 150 characters.
-   - TEXT FOCUS TWEAK: For the "text" key option, format it explicitly as a text-only communication medium such as a headline, tweet, notification banner text, or email subject line.
-   - To make it challenging, 2 or 3 of the wrong options should display slightly pushy marketing, high-pressure sale words, or slightly uneven chart setups. However, exactly ONE option must cross the line completely into an objective, deceptive trick pattern.
-   - Set 'correct_vector' to the key name ("text", "ui", "ad", or "graph") holding that true deceptive trick, and 'correct_vector_index' to its 0-based array position (0-3).
+   - TEXT FOCUS: For the "text" key option, format it explicitly as a headline, tweet, notification banner, or email subject line.
+   - To make it challenging, 2 or 3 of the wrong options should display slightly pushy marketing, high-pressure sale words, or slightly uneven chart setups. Exactly ONE option must cross the line completely into an objective, deceptive trick pattern.
+   - Set 'correct_vector' to the key name holding that true deceptive trick, and 'correct_vector_index' to its 0-based array position (0-3).
 
 2. 'manipulation_mcq' structural requirement:
    - Provide a plain question asking which specific trick name is being used in the answer chosen above.
-   - Provide exactly 4 clear trick names as strings inside a plain array layout for 'options'. 
-   - The names must be related to each other in context so the choice isn't obvious, but keep the language straightforward.
-   - Set 'correct_manipulation_name' to the exact string matching the correct trick from the array, and 'correct_manipulation_index' to its 0-based index position (0, 1, 2, or 3).
+   - Provide exactly 4 clear trick names inside an object layout mapped to the keys "a", "b", "c", and "d".
+   - Set 'correct_vector' to the alphabetical key letter holding the true trick, and 'correct_vector_index' to its corresponding 0-based index position.
 
-3. 'short_explanation' requirement:
-   - Provide a plain string under 150 characters explaining why this trick fits the chosen option over the other pushy marketing choices.
+3. 'short_explanation' structural requirement:
+   - Provide a single, plain text string under 200 characters.
+   - COMPOSITION RULE: You must tightly combine two elements into this single string. First, clearly state WHAT the technique means (definition). Second, explain WHY it fits this option over the other grey-area choices.
 
 Do not wrap the JSON output in markdown backticks or code blocks.
 
@@ -132,11 +140,16 @@ Expected JSON Structure:
   },
   "manipulation_mcq": {
     "question": "What is the name of the trick used in the setup above?",
-    "options": ["Confirmshaming", "Visual Interference", "Sneak into Basket", "Roach Motel"],
-    "correct_manipulation_name": "Visual Interference",
-    "correct_manipulation_index": 1
+    "options": {
+      "a": "Confirmshaming",
+      "b": "Visual Interference",
+      "c": "Sneak into Basket",
+      "d": "Roach Motel"
+    },
+    "correct_vector": "b",
+    "correct_vector_index": 1
   },
-  "short_explanation": "The website layout uses a trick by making the 'Accept All' option huge while hiding the decline choice inside regular text."
+  "short_explanation": "Visual Interference hides choices using design. It applies here because the giant accept button completely hides the tiny decline link text."
 }`;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GOOGLE_GENERATIVE_AI_API_KEY}`;
