@@ -10,9 +10,6 @@ dotenv.config({ path: ".env.local" });
 const { SUPABASE_URL, SUPABASE_KEY, GOOGLE_GENERATIVE_AI_API_KEY } = process.env;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ==========================================
-// 1. UNIFIED VALIDATION SCHEMAS
-// ==========================================
 const GutCheckSchema = z.object({
   industry_theme: z.string(),
   questions: z
@@ -86,9 +83,6 @@ const DarkDesignSchema = z.object({
   explanation: z.string(),
 });
 
-// ==========================================
-// 2. MATH CORE & ALGORITHMIC HELPER FUNCTIONS
-// ==========================================
 function getDailySeed(dateStr) {
   let hash = 0;
   for (let i = 0; i < dateStr.length; i++) {
@@ -141,9 +135,6 @@ function generateClearAirParams(today) {
   };
 }
 
-// ==========================================
-// 3. MAIN RUNTIME EXECUTION EXPORT
-// ==========================================
 export async function generate(customMode = null, forceRefresh = false) {
   const argv = yargs(hideBin(process.argv)).argv;
   
@@ -152,14 +143,14 @@ export async function generate(customMode = null, forceRefresh = false) {
   if (!resolvedMode && argv._ && argv._[0]) resolvedMode = argv._[0];
   
   const mode = resolvedMode || "extract_facts";
+  const shouldForce = forceRefresh || argv.forceRefresh === true || argv.forceRefresh === 'true';
 
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60000;
   const today = new Date(now - offset).toISOString().split('T')[0];
 
   try {
-    // NATURAL 24-HOUR DAILY LOCK CHECK
-    if (!forceRefresh) {
+    if (!shouldForce) {
       const { data: existing } = await supabase
         .from("kalari_games")
         .select("content")
@@ -168,13 +159,11 @@ export async function generate(customMode = null, forceRefresh = false) {
         .maybeSingle();
 
       if (existing && existing.content) {
-        const hasFacts = mode === "extract_facts" && existing.content.mcq_questions;
+        const hasFacts = mode === "extract_facts" && Array.isArray(existing.content.mcq_questions);
         const hasGaze = mode === "steady_gaze" && existing.content.screen_color;
         const hasAir = mode === "clear_air" && existing.content.progression_intensity_multiplier;
         const hasDark = mode === "dark_design" && existing.content.scenario_description;
-        
-        const isStuckMushroom = existing.content?.industry_theme?.toLowerCase().includes("mycology");
-        const hasGut = mode === "gut_check" && existing.content?.questions?.[0]?.the_real_question && !isStuckMushroom;
+        const hasGut = mode === "gut_check" && Array.isArray(existing.content.questions);
 
         if (hasGaze || hasAir || hasFacts || hasGut || hasDark) {
           const finalOutput = JSON.stringify(existing.content, null, 2);
@@ -196,7 +185,6 @@ export async function generate(customMode = null, forceRefresh = false) {
       validated = ClearAirSchema.parse(rawParams);
 
     } else {
-      // MEMORY LOOP LAYER: FETCH PAST 10 TOPICS FROM GAME LOGS
       let recentTopics = [];
       try {
         const { data: logs } = await supabase
@@ -209,7 +197,7 @@ export async function generate(customMode = null, forceRefresh = false) {
           recentTopics = logs.map(l => l.topic).filter(Boolean);
         }
       } catch (logErr) {
-        console.warn("⚠️ Memory Loop history fetch bypassed:", logErr.message);
+        // Silent fallback
       }
 
       let prompt = "";
@@ -222,7 +210,6 @@ THEME VARIETY INSTRUCTIONS:
 Select a fun, high-level, broad general knowledge domain that appeals to a mainstream audience. The theme must be widely recognizable and culturally accessible.
 Mandatory broad categories to pick from (rotate or select one dynamically):
 - Global Landmarks & Travel Geography (e.g., world capitals, flight distances, mountain ranges, famous rivers)
-- Pop Culture, Entertainment & Media History (e.g., box office records, long-running TV series, music chart durations)
 - Everyday Culinary Arts & Food Culture (e.g., standard baking temperatures, regional crop production scales, restaurant milestones)
 - Consumer Tech & Modern Internet History (e.g., launch years of popular apps, standard battery life capacities, pixel counts)
 - Major Sports & Athletic Milestones (e.g., marathon lengths, Olympic records, historic stadium seating capacities)
@@ -230,10 +217,15 @@ Mandatory broad categories to pick from (rotate or select one dynamically):
 
 CRITICAL BAN LIST (NEVER GENERATE THESE):
 Do NOT focus on hyper-niche academic disciplines, marine biology, deep-sea exploration, oceanography, astrophysics, space metrics, 'Mycology', 'Mushroom networks', 'Burj Khalifa', architectural building heights, or specialized scientific lab values.
+Also, absolutely avoid 'Pop Culture', 'Entertainment' or 'Media History' for this run.
 
 ANTI-REPETITION FILTER (MEMORY LOOP):
 Avoid themes matching or closely relating to these recent topics:
 [${recentTopics.map(t => `'${t}'`).join(', ')}]
+
+CRITICAL LENGTH CONSTRAINTS:
+1. Every 'anchor_statement' MUST be under a strict maximum length of 150 characters.
+2. Every 'the_real_question' MUST be under a strict maximum length of 150 characters.
 
 MANDATORY QUESTION STYLE:
 Every single question segment must consist of two steps:
@@ -242,9 +234,9 @@ Every single question segment must consist of two steps:
 
 Field Mapping Specifications:
 1. 'industry_theme': A friendly, accessible theme title representing the specific general knowledge sector chosen.
-2. 'anchor_statement': The literal "Yes/No" baseline statement text.
+2. 'anchor_statement': The literal "Yes/No" baseline statement text under 150 characters.
 3. 'is_anchor_true': Boolean (true/false) indicating whether the initial 'anchor_statement' benchmark is factually accurate. Maintain a mix of true and false flags across the 3 questions.
-4. 'the_real_question': The follow-up question string specifically asking for the exact parameter/measurement.
+4. 'the_real_question': The follow-up question string specifically asking for the exact parameter/measurement under 150 characters.
 5. 'the_real_number': The absolute, precise, factually accurate raw numerical answer to 'the_real_question'.
 6. Do not wrap the JSON output in markdown backticks or code blocks.
 
@@ -252,9 +244,9 @@ Expected JSON Structure:
 {
   "industry_theme": "<A Broad, Accessible, and General Interest Theme>",
   "questions": [
-    { "anchor_statement": "<Clear Yes/No question containing a numeric baseline boundary>", "is_anchor_true": false, "the_real_question": "<Follow-up question requesting the actual target metric>", "the_real_number": 26.2, "unit": "miles", "difficulty_level": "Easy" },
-    { "anchor_statement": "<Clear Yes/No question containing a numeric baseline boundary>", "is_anchor_true": true, "the_real_question": "<Follow-up question requesting the actual target metric>", "the_real_number": 1997, "unit": "year", "difficulty_level": "Medium" },
-    { "anchor_statement": "<Clear Yes/No question containing a numeric baseline boundary>", "is_anchor_true": false, "the_real_question": "<Follow-up question requesting the actual target metric>", "the_real_number": 120, "unit": "minutes", "difficulty_level": "Hard" }
+    { "anchor_statement": "<Clear Yes/No question containing a numeric baseline boundary under 150 chars>", "is_anchor_true": false, "the_real_question": "<Follow-up question requesting the actual target metric under 150 chars>", "the_real_number": 26.2, "unit": "miles", "difficulty_level": "Easy" },
+    { "anchor_statement": "<Clear Yes/No question containing a numeric baseline boundary under 150 chars>", "is_anchor_true": true, "the_real_question": "<Follow-up question requesting the actual target metric under 150 chars>", "the_real_number": 1997, "unit": "year", "difficulty_level": "Medium" },
+    { "anchor_statement": "<Clear Yes/No question containing a numeric baseline boundary under 150 chars>", "is_anchor_true": false, "the_real_question": "<Follow-up question requesting the actual target metric under 150 chars>", "the_real_number": 120, "unit": "minutes", "difficulty_level": "Hard" }
   ]
 }`;
       } else if (mode === "dark_design") {
@@ -346,9 +338,6 @@ Expected JSON Structure:
       }
     }
 
-    // ==========================================
-    // 4. TRANSACTION OVERWRITE SNAPSHOT LAYER
-    // ==========================================
     await supabase
       .from("kalari_games")
       .delete()
@@ -374,21 +363,18 @@ Expected JSON Structure:
 
     return validated;
   } catch (err) {
-    console.error("🛑 SCRIPT ERROR:", err.message);
     if (err instanceof z.ZodError) {
-      console.error("Validation Details:", JSON.stringify(err.errors, null, 2));
+      process.stderr.write(JSON.stringify(err.errors, null, 2));
+    } else {
+      process.stderr.write(err.message);
     }
     throw err;
   }
 }
 
-// ==========================================
-// 5. TERMINAL EXECUTION HOOK
-// ==========================================
 if (process.argv[1] && (process.argv[1].endsWith("generate_game.js") || process.argv[1].endsWith("generate_game.ts"))) {
   const argv = yargs(hideBin(process.argv)).argv;
   const force = argv.forceRefresh === true || argv.forceRefresh === 'true';
-  
   const targetMode = argv.mode || argv._[0] || null;
 
   generate(targetMode, force); 
