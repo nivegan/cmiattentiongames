@@ -11,8 +11,8 @@ dotenv.config({ path: ".env.local" });
 const { SUPABASE_URL, SUPABASE_KEY, GOOGLE_GENERATIVE_AI_API_KEY } = process.env;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Absolute fallback file writer path
-const EXPLICIT_OUTPUT_PATH = '/Users/urjaswichakraborty/cmiattentiongames/dark_design.json';
+// Dynamically resolves the path relative to the runtime execution context
+const RESOLVED_OUTPUT_PATH = path.join(process.cwd(), 'dark_design.json');
 
 // Reusable schema helper to enforce the strict 150-character limit
 const LimitedString = z.string().max(150, "Content exceeds the strict 150-character limit");
@@ -70,7 +70,7 @@ export async function generate(customMode = null, forceRefresh = false) {
 
       if (existing && existing.content && existing.content.vector_mcq) {
         const finalOutput = JSON.stringify(existing.content, null, 2);
-        fs.writeFileSync(EXPLICIT_OUTPUT_PATH, finalOutput);
+        fs.writeFileSync(RESOLVED_OUTPUT_PATH, finalOutput);
         process.stdout.write(finalOutput);
         return existing.content;
       }
@@ -89,7 +89,7 @@ export async function generate(customMode = null, forceRefresh = false) {
         recentTopics = logs.map(l => l.topic).filter(Boolean);
       }
     } catch (logErr) {
-      console.warn("⚠️ Memory Loop history fetch bypassed:", logErr.message);
+      // Silent fallback
     }
 
     const prompt = `Return ONLY a raw JSON object for 'Dark Design'.
@@ -189,14 +189,15 @@ Expected JSON Structure:
     });
 
     const finalOutput = JSON.stringify(validated, null, 2);
-    fs.writeFileSync(EXPLICIT_OUTPUT_PATH, finalOutput);
+    fs.writeFileSync(RESOLVED_OUTPUT_PATH, finalOutput);
     process.stdout.write(finalOutput);
 
     return validated;
   } catch (err) {
-    console.error("🛑 SCRIPT ERROR:", err.message);
     if (err instanceof z.ZodError) {
-      console.error("Validation Details:", JSON.stringify(err.errors, null, 2));
+      process.stderr.write(JSON.stringify(err.errors, null, 2));
+    } else {
+      process.stderr.write(err.message);
     }
     throw err;
   }
@@ -205,10 +206,20 @@ Expected JSON Structure:
 // ==========================================
 // 4. TERMINAL EXECUTION HOOK
 // ==========================================
-if (process.argv[1] && (process.argv[1].endsWith("generate_dark_design.js") || process.argv[1].endsWith("generate_dark_design.ts"))) {
-  const argv = yargs(hideBin(process.argv)).argv;
-  const force = argv.forceRefresh === true || argv.forceRefresh === 'true' || argv.force === true;
-  const targetMode = argv.mode || argv._[0] || null;
+const currentScript = process.argv[1];
+if (currentScript) {
+  const baseName = path.basename(currentScript);
+  const matchesName = 
+    baseName === "generate_dark_design.js" || 
+    baseName === "generate_dark_design.ts" ||
+    baseName === "generate_dark_designs.js" || 
+    baseName === "generate_dark_designs.ts";
 
-  generate(targetMode, force); 
+  if (matchesName) {
+    const argv = yargs(hideBin(process.argv)).argv;
+    const force = argv.forceRefresh === true || argv.forceRefresh === 'true' || argv.force === true;
+    const targetMode = argv.mode || argv._[0] || null;
+
+    generate(targetMode, force); 
+  }
 }
