@@ -86,6 +86,13 @@ export async function generate(customMode: string | null = null, forceRefresh = 
   const offset = now.getTimezoneOffset() * 60000;
   const today = new Date(now.getTime() - offset).toISOString().split('T')[0];
 
+  // STRICT KEYS SERIALIZATION MAP ORDER
+  const strictJsonReplacerOrder: string[] = [
+    "vector_mcq", "question", "options", "text", "ui", "ad", "graph", "correct_vector", "correct_vector_index",
+    "manipulation_mcq", "a", "b", "c", "d", 
+    "short_explanation"
+  ];
+
   try {
     // NATURAL 24-HOUR DAILY LOCK CHECK
     if (!forceRefresh) {
@@ -99,10 +106,10 @@ export async function generate(customMode: string | null = null, forceRefresh = 
       if (existing && existing.content && typeof existing.content === 'object') {
         const contentObj = existing.content as Record<string, unknown>;
         if (contentObj.vector_mcq) {
-          const finalOutput = JSON.stringify(existing.content, null, 2);
+          const finalOutput = JSON.stringify(existing.content, strictJsonReplacerOrder, 2);
           fs.writeFileSync(RESOLVED_OUTPUT_PATH, finalOutput);
           process.stdout.write(finalOutput);
-          return existing.content as DarkDesignData;
+          return existing.content as unknown as DarkDesignData;
         }
       }
     }
@@ -205,6 +212,9 @@ Expected JSON Structure:
     const parsed = JSON.parse(rawText);
     const validated = DarkDesignSchema.parse(parsed);
 
+    // Forces structural key constraints prior to DB deployment
+    const orderedPayload = JSON.parse(JSON.stringify(validated, strictJsonReplacerOrder));
+
     // ==========================================
     // 3. TRANSACTION OVERWRITE SNAPSHOT LAYER
     // ==========================================
@@ -217,11 +227,11 @@ Expected JSON Structure:
     await supabase.from("kalari_games").insert({
       mode,
       topic: "Daily Dark Design Challenge", 
-      content: validated,
+      content: orderedPayload,
       scheduled_for: today,
     });
 
-    const finalOutput = JSON.stringify(validated, null, 2);
+    const finalOutput = JSON.stringify(validated, strictJsonReplacerOrder, 2);
     fs.writeFileSync(RESOLVED_OUTPUT_PATH, finalOutput);
     process.stdout.write(finalOutput);
 
