@@ -54,11 +54,17 @@ const GAP_BETWEEN_ROUNDS_SEC = 5; // intermission between rounds (toast warns of
 const FALL_STEP_PX = 10; // pixels the object drops per step
 const FALL_STEP_INTERVAL_SEC = 0.1; // pause between steps
 const SPAWN_GAP_MS = 350; // pause after an object resolves before the next spawns
-const ITEMS_PER_ROUND = 16; // precomputed pool per round (more than can fit in 20 s)
+const ITEMS_PER_ROUND = 16; // precomputed pool per round PER LANE (more than can fit in 20 s)
 const ELITE_BENCHMARK = 24; // correct-tap count that maps to a perfect 100
 const WRONG_TAP_WEIGHT = 1; // each wrong tap cancels this many correct taps
 const MATCH_PROB = 0.55; // share of falling objects that match the rule
 const ITEM_SIZE = 60; // px — shape box size / word line-height box
+// The play area is split into LANE_COUNT invisible vertical lanes; one object
+// falls in each lane, independent of the others. There is NO visible divider —
+// the split only governs spawn positions. LANE_PADDING keeps an object's centre
+// far enough from a lane edge that wide Stroop words don't spill across the seam.
+const LANE_COUNT = 2;
+const LANE_PADDING = 50; // px inset from each lane edge for the object's centre
 
 // Changeable palettes — every round rule derives from these, nothing hardcoded.
 const GAME_COLORS = [
@@ -100,7 +106,7 @@ interface ItemData {
 interface RoundDef {
   kind: RuleKind;
   target: string; // ColorKey / ShapeKey / word, depending on kind
-  items: ItemData[];
+  lanes: ItemData[][]; // one independent item pool per lane (length LANE_COUNT)
 }
 
 type GameData = ReturnType<typeof computeGameData>;
@@ -119,78 +125,105 @@ const computeGameData = () => {
   const otherShape = (exclude: ShapeKey): ShapeKey =>
     pick(GAME_SHAPES.filter((s) => s !== exclude));
 
+  // Builds LANE_COUNT independent item pools for one round, each ITEMS_PER_ROUND
+  // long. genOne() is the round-specific generator; lanes are filled one after
+  // another off the same rng, so the whole day stays fully deterministic and each
+  // lane gets its own distinct sequence.
+  const makeLanes = (genOne: () => ItemData): ItemData[][] =>
+    Array.from({ length: LANE_COUNT }, () =>
+      Array.from({ length: ITEMS_PER_ROUND }, genOne),
+    );
+
   const rounds: RoundDef[] = [];
 
   // Round 1 — COLOR_MATCH: mixed-color shapes; tap the target color.
   {
     const target = pick(GAME_COLORS).key;
-    const items: ItemData[] = [];
-    for (let i = 0; i < ITEMS_PER_ROUND; i++) {
-      const wantMatch = rng() < MATCH_PROB;
-      const colorKey = wantMatch ? target : otherColor(target);
-      items.push({
-        shape: pick(GAME_SHAPES),
-        colorKey,
-        isMatch: colorKey === target,
-        xFrac: rng(),
-      });
-    }
-    rounds.push({ kind: "COLOR_MATCH", target, items });
+    rounds.push({
+      kind: "COLOR_MATCH",
+      target,
+      lanes: makeLanes(() => {
+        const wantMatch = rng() < MATCH_PROB;
+        const colorKey = wantMatch ? target : otherColor(target);
+        return {
+          shape: pick(GAME_SHAPES),
+          colorKey,
+          isMatch: colorKey === target,
+          xFrac: rng(),
+        };
+      }),
+    });
   }
 
   // Round 2 — SHAPE_EXCLUDE: tap anything that is NOT the target shape.
   {
     const target = pick(GAME_SHAPES);
-    const items: ItemData[] = [];
-    for (let i = 0; i < ITEMS_PER_ROUND; i++) {
-      const wantMatch = rng() < MATCH_PROB; // match = NOT the target shape
-      const shape = wantMatch ? otherShape(target) : target;
-      items.push({
-        shape,
-        colorKey: pick(GAME_COLORS).key, // color is irrelevant here, just variety
-        isMatch: shape !== target,
-        xFrac: rng(),
-      });
-    }
-    rounds.push({ kind: "SHAPE_EXCLUDE", target, items });
+    rounds.push({
+      kind: "SHAPE_EXCLUDE",
+      target,
+      lanes: makeLanes(() => {
+        const wantMatch = rng() < MATCH_PROB; // match = NOT the target shape
+        const shape = wantMatch ? otherShape(target) : target;
+        return {
+          shape,
+          colorKey: pick(GAME_COLORS).key, // color is irrelevant here, just variety
+          isMatch: shape !== target,
+          xFrac: rng(),
+        };
+      }),
+    });
   }
 
   // Round 3 — STROOP_WORD: color names in random ink; tap by TEXT == target.
   {
     const target = pick(GAME_COLORS).key;
-    const items: ItemData[] = [];
-    for (let i = 0; i < ITEMS_PER_ROUND; i++) {
-      const wantMatch = rng() < MATCH_PROB;
-      const word = wantMatch ? target : otherColor(target);
-      items.push({
-        word,
-        ink: pick(GAME_COLORS).key, // ink random & independent of text
-        isMatch: word === target,
-        xFrac: rng(),
-      });
-    }
-    rounds.push({ kind: "STROOP_WORD", target, items });
+    rounds.push({
+      kind: "STROOP_WORD",
+      target,
+      lanes: makeLanes(() => {
+        const wantMatch = rng() < MATCH_PROB;
+        const word = wantMatch ? target : otherColor(target);
+        return {
+          word,
+          ink: pick(GAME_COLORS).key, // ink random & independent of text
+          isMatch: word === target,
+          xFrac: rng(),
+        };
+      }),
+    });
   }
 
   // Round 4 — STROOP_INK: color names in random ink; tap by INK == target.
   {
     const target = pick(GAME_COLORS).key;
-    const items: ItemData[] = [];
-    for (let i = 0; i < ITEMS_PER_ROUND; i++) {
-      const wantMatch = rng() < MATCH_PROB;
-      const ink = wantMatch ? target : otherColor(target);
-      items.push({
-        word: pick(GAME_COLORS).key, // text random & independent of ink
-        ink,
-        isMatch: ink === target,
-        xFrac: rng(),
-      });
-    }
-    rounds.push({ kind: "STROOP_INK", target, items });
+    rounds.push({
+      kind: "STROOP_INK",
+      target,
+      lanes: makeLanes(() => {
+        const wantMatch = rng() < MATCH_PROB;
+        const ink = wantMatch ? target : otherColor(target);
+        return {
+          word: pick(GAME_COLORS).key, // text random & independent of ink
+          ink,
+          isMatch: ink === target,
+          xFrac: rng(),
+        };
+      }),
+    });
   }
 
   return { rounds };
 };
+
+// Per-lane render state: the visible object in a lane and its horizontal centre.
+// Position's vertical component is driven imperatively by the RAF loop (refs),
+// so only content + x live in React state.
+interface LaneRender {
+  item: ItemData | null;
+  x: number;
+}
+const emptyLanes = (): LaneRender[] =>
+  Array.from({ length: LANE_COUNT }, () => ({ item: null, x: 0 }));
 
 // Plain-text rule (used in the round-change toast).
 const plainBanner = (round: RoundDef): string => {
@@ -208,16 +241,23 @@ const plainBanner = (round: RoundDef): string => {
 
 // ── Mutable game state (lives in a ref, mutated by the RAF loop) ─────────────
 
+// One lane's mutable runtime: its currently-falling object (y = px descended from
+// the spawn point; stepTimer = sec to next hop), its next-item pointer, and the
+// countdown to its next spawn while empty. Lanes advance fully independently.
+interface LaneRuntime {
+  item: (ItemData & { y: number; stepTimer: number; resolved: boolean }) | null;
+  itemIndex: number; // next item to spawn within the current round's lane pool
+  spawnTimer: number; // seconds until the next spawn (when this lane is empty)
+}
+
 interface GameState {
   roundIndex: number; // 0..ROUND_COUNT-1
   roundTimeLeft: number; // seconds left in the current round
   playElapsed: number; // accumulated PLAY time (drives the global countdown)
   inGap: boolean; // true during the inter-round intermission
   gapTimeLeft: number; // seconds left in the current gap
-  item: (ItemData & { y: number; stepTimer: number; resolved: boolean }) | null; // y = px descended from the spawn point; stepTimer = sec to next step
-  itemIndex: number; // next item to spawn within the current round
-  spawnTimer: number; // seconds until the next spawn (when no item is active)
-  correctTaps: number; // pooled across all rounds
+  lanes: LaneRuntime[]; // LANE_COUNT independent falling lanes
+  correctTaps: number; // pooled across all rounds and lanes
   wrongTaps: number;
   lastFrame: number;
   lastDisplay: number;
@@ -225,6 +265,10 @@ interface GameState {
   areaHeight: number;
   active: boolean;
 }
+
+// Initial spawn timer for a lane, staggered by lane index so the lanes don't
+// pulse in lock-step (reads as two independent streams).
+const laneSpawnLead = (laneId: number): number => 0.4 + laneId * 0.7;
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -237,10 +281,9 @@ const MentalReflexPage = () => {
   const [displayRound, setDisplayRound] = useState(0); // round whose banner is shown
   const [isGap, setIsGap] = useState(false);
   const [gapLeft, setGapLeft] = useState(GAP_BETWEEN_ROUNDS_SEC);
-  // Currently visible falling object (state so its content renders declaratively;
-  // its POSITION is driven by the RAF loop via itemRef, not React).
-  const [currentItem, setCurrentItem] = useState<ItemData | null>(null);
-  const [itemX, setItemX] = useState(0);
+  // Per-lane visible objects (content + x render declaratively; vertical position
+  // is driven by the RAF loop via itemRefs, not React).
+  const [lanesRender, setLanesRender] = useState<LaneRender[]>(emptyLanes);
   const [result, setResult] = useState({ score: 0, correct: 0, wrong: 0 });
 
   const deviceIdRef = useDeviceId();
@@ -250,9 +293,23 @@ const MentalReflexPage = () => {
   const [isError, setIsError] = useState(false);
 
   const gameAreaRef = useRef<HTMLDivElement>(null);
-  const itemRef = useRef<HTMLDivElement>(null);
+  // One DOM node per lane (index = laneId); the RAF loop mutates each transform.
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const rafRef = useRef<number | null>(null);
   const gs = useRef<GameState | null>(null);
+
+  // Updates a single lane's render state (content + horizontal centre), leaving
+  // the other lanes untouched. Stable identity for use in the RAF callbacks.
+  const setLaneRender = useCallback(
+    (laneId: number, item: ItemData | null, x: number) => {
+      setLanesRender((prev) => {
+        const next = [...prev];
+        next[laneId] = { item, x };
+        return next;
+      });
+    },
+    [],
+  );
 
   // Stops the RAF loop.
   const stopGame = useCallback(() => {
@@ -268,7 +325,7 @@ const MentalReflexPage = () => {
     const state = gs.current;
     if (!state) return;
     state.active = false;
-    setCurrentItem(null);
+    setLanesRender(emptyLanes());
     const score = Math.max(
       0,
       Math.min(
@@ -288,30 +345,37 @@ const MentalReflexPage = () => {
     setPhase("SAVING");
   }, []);
 
-  // Spawns the next object of the current round (if any remain).
-  const spawnNext = useCallback(() => {
-    const state = gs.current;
-    if (!state) return;
-    const round = data.rounds[state.roundIndex];
-    const item = round.items[state.itemIndex];
-    if (!item) {
-      // Round pool exhausted — wait out the remaining round time.
-      state.spawnTimer = SPAWN_GAP_MS / 1000;
-      return;
-    }
-    state.itemIndex++;
-    state.item = {
-      ...item,
-      y: 0,
-      stepTimer: FALL_STEP_INTERVAL_SEC,
-      resolved: false,
-    };
-    const margin = 36;
-    const centerX =
-      margin + item.xFrac * Math.max(0, state.areaWidth - 2 * margin);
-    setItemX(centerX);
-    setCurrentItem(item);
-  }, [data]);
+  // Spawns the next object for one lane (if any remain in that lane's pool),
+  // positioned within the lane's invisible vertical slice of the play area.
+  const spawnNext = useCallback(
+    (laneId: number) => {
+      const state = gs.current;
+      if (!state) return;
+      const lane = state.lanes[laneId];
+      const round = data.rounds[state.roundIndex];
+      const item = round.lanes[laneId][lane.itemIndex];
+      if (!item) {
+        // This lane's pool is exhausted — wait out the remaining round time.
+        lane.spawnTimer = SPAWN_GAP_MS / 1000;
+        return;
+      }
+      lane.itemIndex++;
+      lane.item = {
+        ...item,
+        y: 0,
+        stepTimer: FALL_STEP_INTERVAL_SEC,
+        resolved: false,
+      };
+      // Map xFrac within this lane's slice [laneStart+PAD, laneStart+laneW-PAD].
+      const laneW = state.areaWidth / LANE_COUNT;
+      const laneStart = laneId * laneW;
+      const lo = laneStart + LANE_PADDING;
+      const hi = laneStart + laneW - LANE_PADDING;
+      const centerX = lo + item.xFrac * Math.max(0, hi - lo);
+      setLaneRender(laneId, item, centerX);
+    },
+    [data, setLaneRender],
+  );
 
   // Initialises state and starts the RAF loop.
   const startGame = useCallback(() => {
@@ -324,9 +388,11 @@ const MentalReflexPage = () => {
       playElapsed: 0,
       inGap: false,
       gapTimeLeft: 0,
-      item: null,
-      itemIndex: 0,
-      spawnTimer: 0.4, // brief lead-in before the first object
+      lanes: Array.from({ length: LANE_COUNT }, (_, i) => ({
+        item: null,
+        itemIndex: 0,
+        spawnTimer: laneSpawnLead(i), // staggered lead-in per lane
+      })),
       correctTaps: 0,
       wrongTaps: 0,
       lastFrame: 0,
@@ -356,39 +422,48 @@ const MentalReflexPage = () => {
         if (state.gapTimeLeft <= 0) {
           state.roundIndex++;
           state.roundTimeLeft = ROUND_DURATION_SEC;
-          state.itemIndex = 0;
-          state.item = null;
-          state.spawnTimer = 0.4;
+          state.lanes.forEach((lane, i) => {
+            lane.item = null;
+            lane.itemIndex = 0;
+            lane.spawnTimer = laneSpawnLead(i);
+          });
           state.inGap = false;
           setIsGap(false);
           setDisplayRound(state.roundIndex);
-          setCurrentItem(null);
+          setLanesRender(emptyLanes());
         }
       } else {
         // ── Active play ──
         state.roundTimeLeft -= dt;
         state.playElapsed += dt;
 
-        if (state.item && !state.item.resolved) {
-          // Stepped descent: advance one FALL_STEP_PX hop each time the step
-          // timer elapses (while-loop in case a large dt covers several steps).
-          state.item.stepTimer -= dt;
-          while (state.item.stepTimer <= 0) {
-            state.item.y += FALL_STEP_PX;
-            state.item.stepTimer += FALL_STEP_INTERVAL_SEC;
+        // Advance every lane independently.
+        for (let laneId = 0; laneId < state.lanes.length; laneId++) {
+          const lane = state.lanes[laneId];
+          if (lane.item && !lane.item.resolved) {
+            // Stepped descent: advance one FALL_STEP_PX hop each time the step
+            // timer elapses (while-loop in case a large dt covers several steps).
+            lane.item.stepTimer -= dt;
+            while (lane.item.stepTimer <= 0) {
+              lane.item.y += FALL_STEP_PX;
+              lane.item.stepTimer += FALL_STEP_INTERVAL_SEC;
+            }
+            if (lane.item.y >= state.areaHeight + ITEM_SIZE) {
+              // Reached the bottom untapped — just disappears (no penalty).
+              lane.item = null;
+              setLaneRender(laneId, null, 0);
+              lane.spawnTimer = SPAWN_GAP_MS / 1000;
+            } else {
+              const el = itemRefs.current[laneId];
+              if (el) {
+                const y = -ITEM_SIZE + lane.item.y;
+                el.style.transform = `translate(-50%, ${y.toFixed(1)}px)`;
+              }
+            }
+          } else if (!lane.item) {
+            lane.spawnTimer -= dt;
+            if (lane.spawnTimer <= 0) spawnNext(laneId);
           }
-          if (state.item.y >= state.areaHeight + ITEM_SIZE) {
-            // Reached the bottom untapped — just disappears (no penalty).
-            state.item = null;
-            setCurrentItem(null);
-            state.spawnTimer = SPAWN_GAP_MS / 1000;
-          } else if (itemRef.current) {
-            const y = -ITEM_SIZE + state.item.y;
-            itemRef.current.style.transform = `translate(-50%, ${y.toFixed(1)}px)`;
-          }
-        } else if (!state.item) {
-          state.spawnTimer -= dt;
-          if (state.spawnTimer <= 0) spawnNext();
         }
 
         // Round boundary?
@@ -396,10 +471,12 @@ const MentalReflexPage = () => {
           if (state.roundIndex < ROUND_COUNT - 1) {
             state.inGap = true;
             state.gapTimeLeft = GAP_BETWEEN_ROUNDS_SEC;
-            state.item = null;
-            setCurrentItem(null);
+            state.lanes.forEach((lane) => {
+              lane.item = null;
+            });
             setIsGap(true);
             setGapLeft(GAP_BETWEEN_ROUNDS_SEC);
+            setLanesRender(emptyLanes());
             const next = data.rounds[state.roundIndex + 1];
             toast("Rules are changing!", {
               description: `Round ${state.roundIndex + 2}: ${plainBanner(next)}`,
@@ -424,20 +501,26 @@ const MentalReflexPage = () => {
     };
 
     rafRef.current = requestAnimationFrame(loop);
-  }, [data, endGame, spawnNext]);
+  }, [data, endGame, spawnNext, setLaneRender]);
 
-  // Tap on a falling object: correct if it matches the rule, wrong otherwise.
-  const handleItemTap = useCallback(() => {
-    const state = gs.current;
-    if (!state?.active || !state.item || state.item.resolved) return;
-    state.item.resolved = true;
-    logFunnelEvent("GAME_CLICK", deviceIdRef.current, "MENTAL_REFLEX");
-    if (state.item.isMatch) state.correctTaps++;
-    else state.wrongTaps++;
-    state.item = null;
-    setCurrentItem(null);
-    state.spawnTimer = SPAWN_GAP_MS / 1000;
-  }, [deviceIdRef]);
+  // Tap on a falling object in a given lane: correct if it matches the rule,
+  // wrong otherwise. Each lane resolves independently.
+  const handleItemTap = useCallback(
+    (laneId: number) => {
+      const state = gs.current;
+      if (!state?.active) return;
+      const lane = state.lanes[laneId];
+      if (!lane.item || lane.item.resolved) return;
+      lane.item.resolved = true;
+      logFunnelEvent("GAME_CLICK", deviceIdRef.current, "MENTAL_REFLEX");
+      if (lane.item.isMatch) state.correctTaps++;
+      else state.wrongTaps++;
+      lane.item = null;
+      setLaneRender(laneId, null, 0);
+      lane.spawnTimer = SPAWN_GAP_MS / 1000;
+    },
+    [deviceIdRef, setLaneRender],
+  );
 
   // Start / stop the loop when entering / leaving PLAYING.
   useEffect(() => {
@@ -641,26 +724,33 @@ const MentalReflexPage = () => {
               </div>
             </div>
 
-            {/* Play area — single falling object */}
+            {/* Play area — LANE_COUNT independent falling objects. The lane split
+                is purely positional; no divider is drawn (invisible to the player). */}
             <div
               ref={gameAreaRef}
               className="flex-1 relative overflow-hidden bg-[#FAF6F0]"
             >
-              {currentItem && !isGap && (
-                <div
-                  ref={itemRef}
-                  onClick={handleItemTap}
-                  className="absolute top-0 flex items-center justify-center cursor-pointer"
-                  style={{
-                    left: itemX,
-                    minWidth: ITEM_SIZE,
-                    height: ITEM_SIZE,
-                    transform: `translate(-50%, ${-ITEM_SIZE}px)`,
-                  }}
-                >
-                  {renderItemContent(currentItem)}
-                </div>
-              )}
+              {!isGap &&
+                lanesRender.map((lane, laneId) =>
+                  lane.item ? (
+                    <div
+                      key={laneId}
+                      ref={(el) => {
+                        itemRefs.current[laneId] = el;
+                      }}
+                      onClick={() => handleItemTap(laneId)}
+                      className="absolute top-0 flex items-center justify-center cursor-pointer"
+                      style={{
+                        left: lane.x,
+                        minWidth: ITEM_SIZE,
+                        height: ITEM_SIZE,
+                        transform: `translate(-50%, ${-ITEM_SIZE}px)`,
+                      }}
+                    >
+                      {renderItemContent(lane.item)}
+                    </div>
+                  ) : null,
+                )}
 
               {isGap && (
                 <motion.div

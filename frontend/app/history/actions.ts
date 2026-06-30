@@ -15,13 +15,13 @@ import type { DayGame, DayGroup, HistoryResult } from "./types";
 // The games that count toward a "full day". The denominator in the per-day
 // "X/N" completion count is derived from this list's length, so adding a new
 // daily game here is the only change needed to update the count everywhere.
-// READ_BETWEEN_DESIGNS is excluded because it isn't playable yet.
 const DAILY_GAME_MODES: GameMode[] = [
   "GUT_CHECK",
   "EXTRACT_THE_FACTS",
   "STEADY_GAZE",
   "CLEAR_THE_AIR",
   "MENTAL_REFLEX",
+  "READ_BETWEEN_DESIGNS",
 ];
 const DAILY_TOTAL = DAILY_GAME_MODES.length;
 

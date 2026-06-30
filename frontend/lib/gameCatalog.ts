@@ -61,7 +61,7 @@ const GAME_CATALOG: Record<string, GameInfo> = {
   read_designs: {
     slug: "read_designs",
     mode: "READ_BETWEEN_DESIGNS",
-    route: null, // not implemented yet — card shows COMING SOON
+    route: "/play/read_designs",
     label: "Read Between Designs",
     tagline: "Detect manipulation",
     tier: "BLADE",
