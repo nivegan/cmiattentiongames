@@ -55,10 +55,6 @@ const DarkDesignSchema = z.object({
 
 type DarkDesignData = z.infer<typeof DarkDesignSchema>;
 
-interface GameLogEntry {
-  topic: string | null;
-}
-
 interface GeminiResponse {
   candidates?: Array<{
     content?: {
@@ -69,10 +65,17 @@ interface GeminiResponse {
   }>;
 }
 
+interface YargsArgs {
+  forceRefresh?: boolean | string;
+  force?: boolean;
+  mode?: string;
+  _?: Array<string | number>;
+}
+
 // ==========================================
 // 2. EXCLUSIVE DARK DESIGN RUNTIME
 // ==========================================
-export async function generate(customMode: string | null = null, forceRefresh: boolean = false): Promise<DarkDesignData> {
+export async function generate(customMode: string | null = null, forceRefresh = false): Promise<DarkDesignData> {
   const mode = "dark_design";
 
   const now = new Date();
@@ -89,37 +92,20 @@ export async function generate(customMode: string | null = null, forceRefresh: b
         .eq("scheduled_for", today)
         .maybeSingle();
 
-      if (existing && existing.content && (existing.content as any).vector_mcq) {
-        const finalOutput = JSON.stringify(existing.content, null, 2);
-        fs.writeFileSync(RESOLVED_OUTPUT_PATH, finalOutput);
-        process.stdout.write(finalOutput);
-        return existing.content as DarkDesignData;
+      if (existing && existing.content) {
+        const contentObj = existing.content as Record<string, unknown>;
+        if (contentObj.vector_mcq) {
+          const finalOutput = JSON.stringify(existing.content, null, 2);
+          fs.writeFileSync(RESOLVED_OUTPUT_PATH, finalOutput);
+          process.stdout.write(finalOutput);
+          return existing.content as DarkDesignData;
+        }
       }
-    }
-
-    // MEMORY LOOP LAYER: FETCH PAST 10 TOPICS FROM GAME LOGS
-    let recentTopics: string[] = [];
-    try {
-      const { data: logs } = await supabase
-        .from("Game_Logs")
-        .select("topic")
-        .order("created_at", { ascending: false })
-        .limit(10);
-      
-      if (logs && logs.length > 0) {
-        recentTopics = (logs as GameLogEntry[]).map(l => l.topic).filter((t): t is string => Boolean(t));
-      }
-    } catch (logErr: any) {
-      // Silent fallback
     }
 
     const prompt = `Return ONLY a raw JSON object for 'Dark Design'.
 Date: ${today}.
 Dynamic Entropy Value: ${Date.now()}-${Math.random()}.
-
-ANTI-REPETITION FILTER (MEMORY LOOP):
-Avoid themes matching or closely relating to these recent topics:
-[${recentTopics.map(t => `'${t}'`).join(', ')}]
 
 CRITICAL CHARACTER & LANGUAGE CONSTRAINTS:
 1. Questions and individual options (text, ui, ad, graph, a, b, c, d) MUST be under a strict maximum length of 150 characters.
@@ -214,11 +200,13 @@ Expected JSON Structure:
     process.stdout.write(finalOutput);
 
     return validated;
-  } catch (err: any) {
+  } catch (err) {
     if (err instanceof z.ZodError) {
       process.stderr.write(JSON.stringify(err.errors, null, 2));
+    } else if (err instanceof Error) {
+      process.stderr.write(err.message);
     } else {
-      process.stderr.write(err.message || String(err));
+      process.stderr.write(String(err));
     }
     throw err;
   }
@@ -237,9 +225,9 @@ if (currentScript) {
     baseName === "generate_dark_designs.ts";
 
   if (matchesName) {
-    const argv = yargs(hideBin(process.argv)).argv as any;
-    const force = argv.forceRefresh === true || argv.forceRefresh === 'true' || argv.force === true;
-    const targetMode = (argv.mode as string) || (argv._[0] as string) || null;
+    const rawArgv = yargs(hideBin(process.argv)).argv as unknown as YargsArgs;
+    const force = rawArgv.forceRefresh === true || rawArgv.forceRefresh === 'true' || rawArgv.force === true;
+    const targetMode = rawArgv.mode || (rawArgv._ && typeof rawArgv._[0] === 'string' ? rawArgv._[0] : null);
 
     generate(targetMode, force); 
   }
