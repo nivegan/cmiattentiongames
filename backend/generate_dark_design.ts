@@ -72,6 +72,10 @@ interface YargsArgs {
   _?: Array<string | number>;
 }
 
+interface KalariGameRow {
+  topic: string | null;
+}
+
 // ==========================================
 // 2. EXCLUSIVE DARK DESIGN RUNTIME
 // ==========================================
@@ -92,7 +96,7 @@ export async function generate(customMode: string | null = null, forceRefresh = 
         .eq("scheduled_for", today)
         .maybeSingle();
 
-      if (existing && existing.content) {
+      if (existing && existing.content && typeof existing.content === 'object') {
         const contentObj = existing.content as Record<string, unknown>;
         if (contentObj.vector_mcq) {
           const finalOutput = JSON.stringify(existing.content, null, 2);
@@ -103,9 +107,31 @@ export async function generate(customMode: string | null = null, forceRefresh = 
       }
     }
 
+    // MEMORY LOOP LAYER: FETCH PAST 10 TOPICS DIRECTLY FROM KALARI_GAMES
+    let recentTopics: string[] = [];
+    try {
+      const { data: history } = await supabase
+        .from("kalari_games")
+        .select("topic")
+        .order("scheduled_for", { ascending: false })
+        .limit(10);
+      
+      if (history && history.length > 0) {
+        recentTopics = (history as KalariGameRow[])
+          .map(h => h.topic)
+          .filter((t): t is string => Boolean(t));
+      }
+    } catch (histErr) {
+      // Silent fallback if table query defaults
+    }
+
     const prompt = `Return ONLY a raw JSON object for 'Dark Design'.
 Date: ${today}.
 Dynamic Entropy Value: ${Date.now()}-${Math.random()}.
+
+ANTI-REPETITION FILTER (MEMORY LOOP):
+Avoid themes matching or closely relating to these recent topics:
+[${recentTopics.map(t => `'${t}'`).join(', ')}]
 
 CRITICAL CHARACTER & LANGUAGE CONSTRAINTS:
 1. Questions and individual options (text, ui, ad, graph, a, b, c, d) MUST be under a strict maximum length of 150 characters.
