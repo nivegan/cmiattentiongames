@@ -11,13 +11,16 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { User, LogIn } from "lucide-react";
+import { User, LogIn, Settings, Info, MessageSquare } from "lucide-react";
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
+import { Toaster } from "sonner";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { fetchPlayedToday } from "@/app/home-actions";
 import { GAME_CATALOG, TIERS } from "@/lib/gameCatalog";
 import type { GameInfo } from "@/lib/gameCatalog";
 import type { GameMode } from "@/utils/generate_game";
+import { AboutKalariModal } from "@/components/AboutKalariModal";
+import { SendFeedbackModal } from "@/components/SendFeedbackModal";
 import scheduleData from "@/data/dailySchedule.json";
 
 const schedule = scheduleData.schedule as Record<string, string[]>;
@@ -62,6 +65,8 @@ const GameCard = ({ game, done }: { game: GameInfo; done: boolean }) => (
 const HomeGrid = () => {
   const deviceIdRef = useDeviceId();
   const [played, setPlayed] = useState<GameMode[]>([]);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
     // Server action (auth() resolves identity server-side); update on resolve.
@@ -127,10 +132,41 @@ const HomeGrid = () => {
               <User className="w-5 h-5 text-[#232323]" strokeWidth={2} />
             </Link>
 
-            {/* Clerk control (replaces the old settings gear) */}
+            {/* Clerk control — styled as the retro gear box; the real avatar is
+                hidden and a gear is overlaid (pointer-events-none) so clicks fall
+                through to Clerk's trigger and still open the dropdown. */}
             <Show when="signed-in">
-              <div className="w-11 h-11 flex items-center justify-center">
-                <UserButton />
+              <div className="relative w-11 h-11">
+                <UserButton
+                  appearance={{
+                    elements: {
+                      rootBox: "w-11 h-11",
+                      userButtonBox: "w-11 h-11",
+                      userButtonTrigger:
+                        "w-11 h-11 rounded-none bg-[#FAF6F0] border border-[#232323]/20 shadow-[3px_3px_0px_rgba(35,35,35,0.12)] focus:shadow-[3px_3px_0px_rgba(35,35,35,0.12)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all",
+                      avatarBox: "opacity-0 w-11 h-11",
+                    },
+                  }}
+                >
+                  <UserButton.MenuItems>
+                    <UserButton.Action
+                      label="About Kalari"
+                      labelIcon={<Info className="w-4 h-4" />}
+                      onClick={() => setAboutOpen(true)}
+                    />
+                    <UserButton.Action
+                      label="Send Feedback"
+                      labelIcon={<MessageSquare className="w-4 h-4" />}
+                      onClick={() => setFeedbackOpen(true)}
+                    />
+                    <UserButton.Action label="manageAccount" />
+                    <UserButton.Action label="signOut" />
+                  </UserButton.MenuItems>
+                </UserButton>
+                <Settings
+                  className="absolute inset-0 m-auto w-5 h-5 text-[#232323] pointer-events-none"
+                  strokeWidth={2}
+                />
               </div>
             </Show>
             <Show when="signed-out">
@@ -189,6 +225,14 @@ const HomeGrid = () => {
           </div>
         )}
       </div>
+
+      {/* Dropdown-launched modals + in-page toaster (layout.tsx is off-limits) */}
+      <AboutKalariModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <SendFeedbackModal
+        open={feedbackOpen}
+        onClose={() => setFeedbackOpen(false)}
+      />
+      <Toaster richColors />
     </div>
   );
 };

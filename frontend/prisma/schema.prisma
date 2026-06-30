@@ -86,6 +86,16 @@ model user_onboarding {
   completed_at DateTime @default(now()) @db.Timestamptz(6)
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model user_feedback {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id           String   @db.Uuid
+  nps_score         Int
+  improvement_score Int
+  comments          String?
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+}
+
 enum EventType {
   SESSION_START
   GAME_START
