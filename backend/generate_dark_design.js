@@ -1,7 +1,7 @@
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 import { z } from "zod";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import dotenv from "dotenv";
@@ -9,18 +9,19 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 
 const { SUPABASE_URL, SUPABASE_KEY, GOOGLE_GENERATIVE_AI_API_KEY } = process.env;
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Dynamically resolves the path relative to the runtime execution context
+if (!SUPABASE_URL || !SUPABASE_KEY || !GOOGLE_GENERATIVE_AI_API_KEY) {
+  throw new Error("Missing required environment variables in .env.local");
+}
+
+const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 const RESOLVED_OUTPUT_PATH = path.join(process.cwd(), 'dark_design.json');
 
-// Reusable schema helper to enforce the strict 150-character limit
 const LimitedString = z.string().max(150, "Content exceeds the strict 150-character limit");
-// Strictly capped at 200 characters to ensure concise explanation delivery
 const ExplanationString = z.string().max(200, "Explanation exceeds the strict 200-character limit");
 
 // ==========================================
-// 1. DYNAMIC VALIDATION SCHEMA
+// 1. DYNAMIC VALIDATION SCHEMA & TYPES
 // ==========================================
 const DarkDesignSchema = z.object({
   vector_mcq: z.object({
@@ -32,7 +33,7 @@ const DarkDesignSchema = z.object({
       graph: LimitedString
     }),
     correct_vector: z.enum(["text", "ui", "ad", "graph"]),
-    correct_vector_index: z.preprocess((val) => parseInt(val, 10), z.number().min(0).max(3))
+    correct_vector_index: z.preprocess((val) => parseInt(val as string, 10), z.number().min(0).max(3))
   }),
   manipulation_mcq: z.object({
     question: LimitedString,
@@ -43,20 +44,32 @@ const DarkDesignSchema = z.object({
       d: LimitedString
     }),
     correct_vector: z.enum(["a", "b", "c", "d"]),
-    correct_vector_index: z.preprocess((val) => parseInt(val, 10), z.number().min(0).max(3))
+    correct_vector_index: z.preprocess((val) => parseInt(val as string, 10), z.number().min(0).max(3))
   }),
   short_explanation: ExplanationString 
 });
 
+type DarkDesignData = z.infer<typeof DarkDesignSchema>;
+
+interface GeminiResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+}
+
 // ==========================================
 // 2. EXCLUSIVE DARK DESIGN RUNTIME
 // ==========================================
-export async function generate(customMode = null, forceRefresh = false) {
+export async function generate(customMode: string | null = null, forceRefresh: boolean = false): Promise<DarkDesignData> {
   const mode = "dark_design";
 
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60000;
-  const today = new Date(now - offset).toISOString().split('T')[0];
+  const today = new Date(now.getTime() - offset).toISOString().split('T')[0];
 
   try {
     // NATURAL 24-HOUR DAILY LOCK CHECK
@@ -68,37 +81,17 @@ export async function generate(customMode = null, forceRefresh = false) {
         .eq("scheduled_for", today)
         .maybeSingle();
 
-      if (existing && existing.content && existing.content.vector_mcq) {
+      if (existing && existing.content && (existing.content as any).vector_mcq) {
         const finalOutput = JSON.stringify(existing.content, null, 2);
         fs.writeFileSync(RESOLVED_OUTPUT_PATH, finalOutput);
         process.stdout.write(finalOutput);
-        return existing.content;
+        return existing.content as DarkDesignData;
       }
-    }
-
-    // MEMORY LOOP LAYER: FETCH PAST 10 TOPICS FROM GAME LOGS
-    let recentTopics = [];
-    try {
-      const { data: logs } = await supabase
-        .from("Game_Logs")
-        .select("topic")
-        .order("created_at", { ascending: false })
-        .limit(10);
-      
-      if (logs && logs.length > 0) {
-        recentTopics = logs.map(l => l.topic).filter(Boolean);
-      }
-    } catch (logErr) {
-      // Silent fallback
     }
 
     const prompt = `Return ONLY a raw JSON object for 'Dark Design'.
 Date: ${today}.
 Dynamic Entropy Value: ${Date.now()}-${Math.random()}.
-
-ANTI-REPETITION FILTER (MEMORY LOOP):
-Avoid themes matching or closely relating to these recent topics:
-[${recentTopics.map(t => `'${t}'`).join(', ')}]
 
 CRITICAL CHARACTER & LANGUAGE CONSTRAINTS:
 1. Questions and individual options (text, ui, ad, graph, a, b, c, d) MUST be under a strict maximum length of 150 characters.
@@ -165,16 +158,13 @@ Expected JSON Structure:
       }),
     });
 
-    const data = await response.json();
-    let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const data = (await response.json()) as GeminiResponse;
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!rawText) throw new Error("API returned empty candidates.");
 
     const parsed = JSON.parse(rawText);
     const validated = DarkDesignSchema.parse(parsed);
 
-    // ==========================================
-    // 3. TRANSACTION OVERWRITE SNAPSHOT LAYER
-    // ==========================================
     await supabase
       .from("kalari_games")
       .delete()
@@ -193,19 +183,16 @@ Expected JSON Structure:
     process.stdout.write(finalOutput);
 
     return validated;
-  } catch (err) {
+  } catch (err: any) {
     if (err instanceof z.ZodError) {
       process.stderr.write(JSON.stringify(err.errors, null, 2));
     } else {
-      process.stderr.write(err.message);
+      process.stderr.write(err.message || String(err));
     }
     throw err;
   }
 }
 
-// ==========================================
-// 4. TERMINAL EXECUTION HOOK
-// ==========================================
 const currentScript = process.argv[1];
 if (currentScript) {
   const baseName = path.basename(currentScript);
@@ -216,9 +203,9 @@ if (currentScript) {
     baseName === "generate_dark_designs.ts";
 
   if (matchesName) {
-    const argv = yargs(hideBin(process.argv)).argv;
+    const argv = yargs(hideBin(process.argv)).argv as any;
     const force = argv.forceRefresh === true || argv.forceRefresh === 'true' || argv.force === true;
-    const targetMode = argv.mode || argv._[0] || null;
+    const targetMode = (argv.mode as string) || (argv._[0] as string) || null;
 
     generate(targetMode, force); 
   }
