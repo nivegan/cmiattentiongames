@@ -26,14 +26,34 @@ const ExplanationString = z.string().max(200, "Explanation exceeds the strict 20
 const DarkDesignSchema = z.object({
   vector_mcq: z.object({
     question: LimitedString,
-    options: z.object({
-      text: LimitedString,
-      ui: LimitedString,
-      ad: LimitedString,
-      graph: LimitedString
+    options_array: z.array(
+      z.object({
+        type: z.enum(["text", "ui", "ad", "graph"]),
+        description: LimitedString
+      })
+    ).length(4).transform((arr) => {
+      const textOpt = arr.find(o => o.type === "text")?.description || "";
+      const uiOpt = arr.find(o => o.type === "ui")?.description || "";
+      const adOpt = arr.find(o => o.type === "ad")?.description || "";
+      const graphOpt = arr.find(o => o.type === "graph")?.description || "";
+      
+      return {
+        text: textOpt,
+        ui: uiOpt,
+        ad: adOpt,
+        graph: graphOpt
+      };
     }),
     correct_vector: z.enum(["text", "ui", "ad", "graph"]),
     correct_vector_index: z.preprocess((val) => parseInt(val, 10), z.number().min(0).max(3))
+  }).transform((val) => {
+    const orderMap = ["text", "ui", "ad", "graph"];
+    return {
+      question: val.question,
+      options: val.options_array, 
+      correct_vector: val.correct_vector,
+      correct_vector_index: orderMap.indexOf(val.correct_vector)
+    };
   }),
   manipulation_mcq: z.object({
     question: LimitedString,
@@ -55,13 +75,23 @@ const DarkDesignSchema = z.object({
 export async function generate(customMode = null, forceRefresh = false) {
   const mode = "dark_design";
 
+  const argv = yargs(hideBin(process.argv)).argv;
+  const shouldForce = forceRefresh || argv.forceRefresh === true || argv.forceRefresh === 'true' || argv.force === true;
+
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60000;
   const today = new Date(now.getTime() - offset).toISOString().split('T')[0];
 
+  // STRICT ORDER FILTER FOR SERIALIZATION ENGINE
+  const strictJsonReplacerOrder = [
+    "vector_mcq", "question", "options", "text", "ui", "ad", "graph", "correct_vector", "correct_vector_index",
+    "manipulation_mcq", "a", "b", "c", "d", 
+    "short_explanation"
+  ];
+
   try {
     // NATURAL 24-HOUR DAILY LOCK CHECK
-    if (!forceRefresh) {
+    if (!shouldForce) {
       const { data: existing } = await supabase
         .from("kalari_games")
         .select("content")
@@ -70,7 +100,7 @@ export async function generate(customMode = null, forceRefresh = false) {
         .maybeSingle();
 
       if (existing && existing.content && existing.content.vector_mcq) {
-        const finalOutput = JSON.stringify(existing.content, null, 2);
+        const finalOutput = JSON.stringify(existing.content, strictJsonReplacerOrder, 2);
         fs.writeFileSync(RESOLVED_OUTPUT_PATH, finalOutput);
         process.stdout.write(finalOutput);
         return existing.content;
@@ -92,7 +122,7 @@ export async function generate(customMode = null, forceRefresh = false) {
           .filter(t => Boolean(t));
       }
     } catch (histErr) {
-      // Silent fallback if table query defaults
+      // Fallback
     }
 
     const prompt = `Return ONLY a raw JSON object for 'Dark Design'.
@@ -104,18 +134,18 @@ Avoid themes matching or closely relating to these recent topics:
 [${recentTopics.map(t => `'${t}'`).join(', ')}]
 
 CRITICAL CHARACTER & LANGUAGE CONSTRAINTS:
-1. Questions and individual options (text, ui, ad, graph, a, b, c, d) MUST be under a strict maximum length of 150 characters.
+1. Questions and individual options MUST be under a strict maximum length of 150 characters.
 2. The 'short_explanation' string MUST be under a strict maximum length of 200 characters. 
 3. Use clear, plain, everyday language. Avoid complex, academic, or niche industry buzzwords.
 
 CORE GAME MECHANICAL RULES:
 1. 'vector_mcq' structural requirement:
    - Provide an easy-to-read question asking the user to find which option uses a trick or deceptive setup.
-   - Generate exactly 4 dynamic options under keys "text", "ui", "ad", and "graph".
-   - Each individual option value MUST be a highly realistic micro-scenario description under 150 characters.
-   - TEXT FOCUS: For the "text" key option, format it explicitly as a headline, tweet, notification banner, or email subject line.
+   - Generate exactly 4 dynamic options inside 'options_array' array containing objects with explicit 'type' attributes: "text", "ui", "ad", and "graph".
+   - Each individual option description value MUST be a highly realistic micro-scenario description under 150 characters.
+   - TEXT FOCUS: For the object with type "text", format it explicitly as a headline, tweet, notification banner, or email subject line.
    - To make it challenging, 2 or 3 of the wrong options should display slightly pushy marketing, high-pressure sale words, or slightly uneven chart setups. Exactly ONE option must cross the line completely into an objective, deceptive trick pattern.
-   - Set 'correct_vector' to the key name holding that true deceptive trick, and 'correct_vector_index' to its 0-based array position (0-3).
+   - Set 'correct_vector' to the value name ("text", "ui", "ad", or "graph") holding that true deceptive trick.
 
 2. 'manipulation_mcq' structural requirement:
    - Provide a plain question asking which specific trick name is being used in the answer chosen above.
@@ -132,12 +162,12 @@ Expected JSON Structure:
 {
   "vector_mcq": {
     "question": "Which of these everyday scenarios uses a deceptive trick?",
-    "options": {
-      "text": "<Dynamic short headline, tweet, or notification alert under 150 chars>",
-      "ui": "<Dynamic short button trick description under 150 chars>",
-      "ad": "<Dynamic short online deal blurb under 150 chars>",
-      "graph": "<Dynamic short factual chart description under 150 chars>"
-    },
+    "options_array": [
+      { "type": "text", "description": "<Dynamic short headline under 150 chars>" },
+      { "type": "ui", "description": "<Dynamic short button trick description under 150 chars>" },
+      { "type": "ad", "description": "<Dynamic short online deal blurb under 150 chars>" },
+      { "type": "graph", "description": "<Dynamic short factual chart description under 150 chars>" }
+    ],
     "correct_vector": "ui",
     "correct_vector_index": 1
   },
@@ -184,14 +214,17 @@ Expected JSON Structure:
       .eq("mode", mode)
       .eq("scheduled_for", today);
 
+    // Forces exact key serialization layout alignment prior to database entry
+    const orderedPayload = JSON.parse(JSON.stringify(validated, strictJsonReplacerOrder));
+
     await supabase.from("kalari_games").insert({
       mode,
       topic: "Daily Dark Design Challenge", 
-      content: validated,
+      content: orderedPayload,
       scheduled_for: today,
     });
 
-    const finalOutput = JSON.stringify(validated, null, 2);
+    const finalOutput = JSON.stringify(validated, strictJsonReplacerOrder, 2);
     fs.writeFileSync(RESOLVED_OUTPUT_PATH, finalOutput);
     process.stdout.write(finalOutput);
 
