@@ -64,8 +64,8 @@ const AboutKalariModal = ({
             Kalari is a daily training ground for the mind. Each day you face a
             short set of games — your{" "}
             <span className="text-[#8B2626] font-bold">payattu</span> — designed
-            to sharpen attention, clarity, and judgment. Every game can be
-            played once per day; come back tomorrow for a fresh round.
+            to sharpen attention, clarity, and judgment. Every day, 2 games can
+            be played.
           </p>
         </div>
 
