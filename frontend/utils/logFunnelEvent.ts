@@ -16,6 +16,7 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
+import { capturePosthog } from "@/utils/posthogServer";
 import { prisma } from "@/utils/prismaInit";
 import type { EventType } from "@/lib/generated/prisma/enums";
 import type { GameMode } from "@/utils/generate_game";
@@ -48,6 +49,17 @@ const logFunnelEvent = async (
         game_type_id: gameTypeId ?? null,
       },
     });
+
+    // Mirror to PostHog for time-series/funnel analytics. GAME_CLICK is excluded
+    // — it fires on every tap (very high volume) and lives only in daily_funnel.
+    // Uses the raw identifier (not dbSafeUuid) so it matches the client-side
+    // posthog.identify(userId ?? deviceId). Nested try/catch inside capturePosthog
+    // guarantees an analytics failure never affects the DB-write result above.
+    if (eventType !== "GAME_CLICK") {
+      await capturePosthog(identifier, eventType, {
+        game_type_id: gameTypeId ?? null,
+      });
+    }
 
     return { success: true };
   } catch (error) {

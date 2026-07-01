@@ -9,8 +9,8 @@
 //
 // GAME STRUCTURE:
 //   4 rounds × 20 s of play. A 5 s gap between rounds (not before R1 / after R4),
-//   during which a Sonner toast warns the rules are about to change. One object
-//   falls at a time; tap it if it matches the round's rule, let it fall if not.
+//   during which the rules change for the next round. One object falls at a time;
+//   tap it if it matches the round's rule, let it fall if not.
 //
 //   Round 1 — COLOR_MATCH   : "Tap the {COLOR} shapes"  (match by color)
 //   Round 2 — SHAPE_EXCLUDE : "Tap what is NOT a {SHAPE}" (match by shape ≠ target)
@@ -29,7 +29,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { toast, Toaster } from "sonner";
 import { checkAlreadyPlayed } from "./actions";
 import { GameLoadingScreen } from "@/components/GameLoadingScreen";
 import { GameErrorScreen } from "@/components/GameErrorScreen";
@@ -46,7 +45,7 @@ import { getTodayIST, getDailySeed, mulberry32 } from "@/utils/seedRng";
 const ROUND_COUNT = 4;
 const ROUND_DURATION_SEC = 20; // play time per round
 const TOTAL_DURATION_SEC = ROUND_COUNT * ROUND_DURATION_SEC; // global countdown (play time only)
-const GAP_BETWEEN_ROUNDS_SEC = 5; // intermission between rounds (toast warns of rule change)
+const GAP_BETWEEN_ROUNDS_SEC = 5; // intermission between rounds (rules change after)
 // Fall is STEPPED (tetris-style): the object drops FALL_STEP_PX pixels, then
 // holds still for FALL_STEP_INTERVAL_SEC, then drops again — repeat until it
 // exits the bottom. Effective speed ≈ FALL_STEP_PX / FALL_STEP_INTERVAL_SEC.
@@ -225,20 +224,6 @@ interface LaneRender {
 const emptyLanes = (): LaneRender[] =>
   Array.from({ length: LANE_COUNT }, () => ({ item: null, x: 0 }));
 
-// Plain-text rule (used in the round-change toast).
-const plainBanner = (round: RoundDef): string => {
-  switch (round.kind) {
-    case "COLOR_MATCH":
-      return `Tap the ${round.target} shapes`;
-    case "SHAPE_EXCLUDE":
-      return `Tap what is NOT a ${round.target}`;
-    case "STROOP_WORD":
-      return `Tap the word ${round.target}`;
-    case "STROOP_INK":
-      return `Tap the ${round.target} ink`;
-  }
-};
-
 // ── Mutable game state (lives in a ref, mutated by the RAF loop) ─────────────
 
 // One lane's mutable runtime: its currently-falling object (y = px descended from
@@ -259,6 +244,7 @@ interface GameState {
   lanes: LaneRuntime[]; // LANE_COUNT independent falling lanes
   correctTaps: number; // pooled across all rounds and lanes
   wrongTaps: number;
+  missedTaps: number; // matching objects that fell to the bottom untapped
   lastFrame: number;
   lastDisplay: number;
   areaWidth: number;
@@ -284,7 +270,12 @@ const MentalReflexPage = () => {
   // Per-lane visible objects (content + x render declaratively; vertical position
   // is driven by the RAF loop via itemRefs, not React).
   const [lanesRender, setLanesRender] = useState<LaneRender[]>(emptyLanes);
-  const [result, setResult] = useState({ score: 0, correct: 0, wrong: 0 });
+  const [result, setResult] = useState({
+    score: 0,
+    correct: 0,
+    wrong: 0,
+    missed: 0,
+  });
 
   const deviceIdRef = useDeviceId();
   const [alreadyPlayed, setAlreadyPlayed] = useState(false);
@@ -341,6 +332,7 @@ const MentalReflexPage = () => {
       score,
       correct: state.correctTaps,
       wrong: state.wrongTaps,
+      missed: state.missedTaps,
     });
     setPhase("SAVING");
   }, []);
@@ -395,6 +387,7 @@ const MentalReflexPage = () => {
       })),
       correctTaps: 0,
       wrongTaps: 0,
+      missedTaps: 0,
       lastFrame: 0,
       lastDisplay: 0,
       areaWidth: area.clientWidth,
@@ -449,7 +442,9 @@ const MentalReflexPage = () => {
               lane.item.stepTimer += FALL_STEP_INTERVAL_SEC;
             }
             if (lane.item.y >= state.areaHeight + ITEM_SIZE) {
-              // Reached the bottom untapped — just disappears (no penalty).
+              // Reached the bottom untapped — no score penalty, but a matching
+              // object slipping through counts as a missed opportunity.
+              if (lane.item.isMatch) state.missedTaps++;
               lane.item = null;
               setLaneRender(laneId, null, 0);
               lane.spawnTimer = SPAWN_GAP_MS / 1000;
@@ -477,10 +472,6 @@ const MentalReflexPage = () => {
             setIsGap(true);
             setGapLeft(GAP_BETWEEN_ROUNDS_SEC);
             setLanesRender(emptyLanes());
-            const next = data.rounds[state.roundIndex + 1];
-            toast("Rules are changing!", {
-              description: `Round ${state.roundIndex + 2}: ${plainBanner(next)}`,
-            });
           } else {
             endGame();
             return;
@@ -501,7 +492,7 @@ const MentalReflexPage = () => {
     };
 
     rafRef.current = requestAnimationFrame(loop);
-  }, [data, endGame, spawnNext, setLaneRender]);
+  }, [endGame, spawnNext, setLaneRender]);
 
   // Tap on a falling object in a given lane: correct if it matches the rule,
   // wrong otherwise. Each lane resolves independently.
@@ -651,7 +642,6 @@ const MentalReflexPage = () => {
       title={phase === "PLAYING" ? headerTimer : "MENTAL REFLEX"}
       onBack={handleBackToHome}
     >
-      <Toaster position="top-center" richColors />
       <AnimatePresence>
         {phase === "WELCOME" && (
           <motion.main
@@ -844,6 +834,11 @@ const MentalReflexPage = () => {
                       label: "WRONG TAPS",
                       value: String(result.wrong),
                       accent: result.wrong > 0,
+                    },
+                    {
+                      label: "MISSED TAPS",
+                      value: String(result.missed),
+                      accent: result.missed > 0,
                     },
                   ].map((row, i) => (
                     <motion.div

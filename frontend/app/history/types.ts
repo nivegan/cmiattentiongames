@@ -17,14 +17,14 @@ interface DayGame {
 interface DayGroup {
   dateKey: string; // IST "YYYY-MM-DD" — also used as the React key
   games: DayGame[]; // distinct games played that day (one play per mode per day)
-  playedCount: number; // distinct games that day, capped at DAILY_TOTAL
+  playedCount: number; // distinct games played that day
+  dailyTotal: number; // games scheduled that weekday — the "X/N" denominator
 }
 
 // The full object returned by fetchHistory to the page component.
 interface HistoryResult {
   days: DayGroup[]; // newest day first
   streak: number; // consecutive IST calendar days the user has played
-  dailyTotal: number; // denominator for the per-day "X/N" count
   gamesCompleted: number; // total plays — "Your Progress" footer stat
   hasEntries: boolean; // false when the user has no plays yet (empty state)
 }

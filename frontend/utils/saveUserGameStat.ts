@@ -18,6 +18,7 @@ import { auth } from "@clerk/nextjs/server";
 import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
 import { prisma } from "@/utils/prismaInit";
 import { checkHasPlayedToday } from "@/utils/checkHasPlayedToday";
+import { capturePosthog } from "@/utils/posthogServer";
 import type { GameMode } from "@/utils/generate_game";
 
 const saveUserGameStat = async (
@@ -62,6 +63,14 @@ const saveUserGameStat = async (
         reaction_time_ms: null, // not tracked yet
         metadata: { source }, // records which game version submitted this row
       },
+    });
+
+    // Mirror score to PostHog so we can build score-distribution and per-game
+    // leaderboard queries. Fire-and-forget — capturePosthog swallows its errors.
+    void capturePosthog(targetIdentifier, "score_saved", {
+      mode,
+      score,
+      source,
     });
 
     return { success: true };

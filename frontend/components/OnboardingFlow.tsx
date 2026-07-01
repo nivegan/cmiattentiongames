@@ -18,6 +18,8 @@
 import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { Show, SignInButton } from "@clerk/nextjs";
+import { clerkAppearance } from "@/lib/clerkAppearance";
+import posthog from "posthog-js";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { hasCompletedOnboarding, completeOnboarding } from "@/app/home-actions";
 
@@ -255,6 +257,7 @@ const OnboardingFlow = ({ home }: OnboardingFlowProps) => {
     // Persist completion (fire-and-forget — the action swallows its own errors),
     // then reveal the home content immediately.
     void completeOnboarding(deviceIdRef.current);
+    posthog.capture("onboarding_completed");
     setStatus("done");
   };
 
@@ -340,7 +343,7 @@ const OnboardingFlow = ({ home }: OnboardingFlowProps) => {
                 {/* Only offer sign-in to signed-out users — opening the Clerk
                     modal while already signed in errors in single-session mode. */}
                 <Show when="signed-out">
-                  <SignInButton mode="modal">
+                  <SignInButton mode="modal" appearance={clerkAppearance}>
                     <button className="mt-6 text-[11px] tracking-[0.15em] text-[#232323]/50 hover:text-[#232323]/80 transition-colors cursor-pointer uppercase">
                       Log in to save progress →
                     </button>

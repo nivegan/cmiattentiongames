@@ -19,6 +19,7 @@
 //   4. Render the day cards + "Your Progress" footer
 
 import { useAuth, SignInButton } from "@clerk/nextjs";
+import { clerkAppearance } from "@/lib/clerkAppearance";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Calendar, CheckCircle2, ArrowLeft } from "lucide-react";
@@ -100,7 +101,7 @@ const HistoryPage = () => {
           <h1 className="font-serif font-bold text-2xl text-[#232323]">
             Sign in to save history
           </h1>
-          <SignInButton mode="modal">
+          <SignInButton mode="modal" appearance={clerkAppearance}>
             <Button className="rounded-full bg-[#8B2626] text-white px-6 hover:bg-[#732020] cursor-pointer">
               Sign In
             </Button>
@@ -128,7 +129,6 @@ const HistoryPage = () => {
   }
 
   const days = data?.days ?? [];
-  const dailyTotal = data?.dailyTotal ?? 0;
   const gamesCompleted = data?.gamesCompleted ?? 0;
   const hasEntries = data?.hasEntries ?? false;
 
@@ -160,7 +160,8 @@ const HistoryPage = () => {
         {hasEntries ? (
           <>
             {days.map((day) => {
-              const complete = dailyTotal > 0 && day.playedCount === dailyTotal;
+              const complete =
+                day.dailyTotal > 0 && day.playedCount === day.dailyTotal;
               return (
                 <div
                   key={day.dateKey}
@@ -181,7 +182,7 @@ const HistoryPage = () => {
                     >
                       {complete && <CheckCircle2 className="size-5" />}
                       <span>
-                        {day.playedCount}/{dailyTotal}
+                        {day.playedCount}/{day.dailyTotal}
                       </span>
                     </div>
                   </div>
@@ -189,7 +190,9 @@ const HistoryPage = () => {
                   {/* Completion progress bar (maroon fill on light track) */}
                   <Progress
                     value={
-                      dailyTotal > 0 ? (day.playedCount / dailyTotal) * 100 : 0
+                      day.dailyTotal > 0
+                        ? (day.playedCount / day.dailyTotal) * 100
+                        : 0
                     }
                     className="h-2 bg-stone-200 *:data-[slot=progress-indicator]:bg-[#8B2626]"
                   />

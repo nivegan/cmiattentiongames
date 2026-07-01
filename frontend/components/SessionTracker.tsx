@@ -20,12 +20,40 @@
 //   beforeunload/unload are deprecated for bfcache-eligible pages and unreliable
 //   on mobile browsers.
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useAuth } from "@clerk/nextjs";
+import posthog from "posthog-js";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { logFunnelEvent } from "@/utils/logFunnelEvent";
 
 const SessionTracker = () => {
   const deviceIdRef = useDeviceId();
+  const { isLoaded, userId } = useAuth();
+  // Track previous userId to detect sign-in during an active session
+  const prevUserIdRef = useRef<string | null | undefined>(undefined);
+
+  // Keep the PostHog person aligned with the server's identity model
+  // (userId || deviceId). Runs once Clerk has loaded and re-runs on sign-in so
+  // the anonymous deviceId person merges into the Clerk user. Guarded on the env
+  // key so it's a no-op when posthog-js was never init'd (see instrumentation-client).
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return;
+    const id = userId ?? deviceIdRef.current;
+    if (id) posthog.identify(id);
+
+    // Fire sign_in when the user transitions from guest to authenticated in-session.
+    // prevUserIdRef starts as undefined (uninitialized) so the first load — even
+    // when the user is already signed in — doesn't trigger the event.
+    if (
+      prevUserIdRef.current !== undefined &&
+      !prevUserIdRef.current &&
+      userId
+    ) {
+      posthog.capture("sign_in");
+    }
+    prevUserIdRef.current = userId;
+  }, [isLoaded, userId, deviceIdRef]);
 
   useEffect(() => {
     // Fire-and-forget — no await so the component mount isn't delayed

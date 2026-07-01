@@ -13,6 +13,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { User, LogIn, Settings, Info, MessageSquare } from "lucide-react";
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
+import { clerkAppearance } from "@/lib/clerkAppearance";
 import { Toaster } from "sonner";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { fetchPlayedToday } from "@/app/home-actions";
@@ -34,8 +35,18 @@ const istParts = (opts: Intl.DateTimeFormatOptions) =>
 
 // A single game card. States: COMPLETED (played today) → PLAY (has route) →
 // COMING SOON (no route yet, e.g. Read Between Designs).
-const GameCard = ({ game, done }: { game: GameInfo; done: boolean }) => (
-  <div className="bg-[#FBF8F2] border border-[#232323]/15 ring-1 ring-inset ring-[#8B2626]/10 shadow-[5px_5px_0px_rgba(35,35,35,0.12)] p-5 flex flex-col">
+const GameCard = ({
+  game,
+  done,
+  className,
+}: {
+  game: GameInfo;
+  done: boolean;
+  className?: string;
+}) => (
+  <div
+    className={`bg-[#FBF8F2] border border-[#232323]/15 ring-1 ring-inset ring-[#8B2626]/10 shadow-[5px_5px_0px_rgba(35,35,35,0.12)] p-5 flex flex-col ${className ?? ""}`}
+  >
     <h3 className="text-lg font-bold text-[#232323] text-center tracking-wide">
       {game.label}
     </h3>
@@ -139,7 +150,11 @@ const HomeGrid = () => {
               <div className="relative w-11 h-11">
                 <UserButton
                   appearance={{
+                    ...clerkAppearance,
                     elements: {
+                      ...clerkAppearance.elements,
+                      // Trigger/avatar overrides make the button match the retro
+                      // gear box and hide the avatar (a Settings icon is overlaid).
                       rootBox: "w-11 h-11",
                       userButtonBox: "w-11 h-11",
                       userButtonTrigger:
@@ -170,7 +185,7 @@ const HomeGrid = () => {
               </div>
             </Show>
             <Show when="signed-out">
-              <SignInButton mode="modal">
+              <SignInButton mode="modal" appearance={clerkAppearance}>
                 <button
                   aria-label="Sign in"
                   className="w-11 h-11 flex items-center justify-center bg-[#FAF6F0] border border-[#232323]/20 shadow-[3px_3px_0px_rgba(35,35,35,0.12)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer"
@@ -199,12 +214,21 @@ const HomeGrid = () => {
                 <p className="text-sm text-[#232323]/55 text-center mt-1 mb-5">
                   {tier.subtitle}
                 </p>
-                <div className="grid grid-cols-2 gap-4">
+                <div
+                  className={
+                    games.length === 1
+                      ? "flex justify-center"
+                      : "grid grid-cols-2 gap-4"
+                  }
+                >
                   {games.map((g) => (
                     <GameCard
                       key={g.slug}
                       game={g}
                       done={playedSet.has(g.mode)}
+                      className={
+                        games.length === 1 ? "w-[calc(50%-0.5rem)]" : undefined
+                      }
                     />
                   ))}
                 </div>

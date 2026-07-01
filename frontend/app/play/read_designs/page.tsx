@@ -7,12 +7,14 @@
 //   3. PHASE2  → name the manipulation technique used (manipulation_mcq)
 //   4. RESULTS → detection metrics, explanation, final score
 //
-// Both phases are retry-until-correct: a wrong tap increments wrongAttempts and
-// fires a "wrong" toast; only the correct tap advances (with a "correct" toast).
+// Both phases are retry-until-correct: a wrong tap increments that phase's wrong
+// counter (patternWrong / techniqueWrong) and fires a "wrong" toast; only the
+// correct tap advances (with a "correct" toast). The RESULTS screen reports the
+// try each phase was solved on (wrong taps + 1).
 //
 // SCORING:
 //   elapsedSeconds = (PHASE2 correct answer − BEGIN ANALYSIS) / 1000
-//   Score = Max(0, round( 100 * 0.7^(wrongAttempts) − Max(0, elapsedSeconds − 8) * 2 ))
+//   Score = Max(0, round( 100 * 0.7^(patternWrong + techniqueWrong) − Max(0, elapsedSeconds − 8) * 2 ))
 
 import { useState, useEffect, useRef } from "react";
 import { Loader2 } from "lucide-react";
@@ -42,6 +44,24 @@ const VECTORS = [
 
 type VectorKey = (typeof VECTORS)[number]["key"];
 
+// English ordinal ("1st", "2nd", "3rd", "4th", "11th", "21st"). Handles the
+// 11–13 teens exception, since a phase can take many wrong taps before the
+// correct one.
+const ordinal = (n: number): string => {
+  const r = n % 100;
+  if (r >= 11 && r <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+};
+
 const ReadDesignsPage = () => {
   const router = useRouter();
 
@@ -55,8 +75,10 @@ const ReadDesignsPage = () => {
 
   const [phase, setPhase] = useState<AppPhase>("INTRO");
 
-  // Total wrong taps across both phases — drives the 0.7^n score decay.
-  const [wrongAttempts, setWrongAttempts] = useState<number>(0);
+  // Wrong taps per phase. Their sum drives the 0.7^n score decay; individually
+  // they give each phase's "solved on the Nth try" (wrong taps + 1) for RESULTS.
+  const [patternWrong, setPatternWrong] = useState<number>(0);
+  const [techniqueWrong, setTechniqueWrong] = useState<number>(0);
   // Seconds of play time, ticked by a useEffect interval while PHASE1/PHASE2 are
   // active. Counting via an effect (rather than Date.now() in a handler) keeps
   // impure clock access out of the render path — the react-hooks/purity rule
@@ -105,7 +127,8 @@ const ReadDesignsPage = () => {
   const finalScore = Math.max(
     0,
     Math.round(
-      100 * Math.pow(0.7, wrongAttempts) - Math.max(0, playSeconds - 8) * 2,
+      100 * Math.pow(0.7, patternWrong + techniqueWrong) -
+        Math.max(0, playSeconds - 8) * 2,
     ),
   );
 
@@ -138,7 +161,7 @@ const ReadDesignsPage = () => {
         transitioningRef.current = false;
       }, 700);
     } else {
-      setWrongAttempts((n) => n + 1);
+      setPatternWrong((n) => n + 1);
       toast.error("Not quite — look again.");
     }
   };
@@ -153,7 +176,7 @@ const ReadDesignsPage = () => {
       // playSeconds already holds total play time; the tick effect stops on RESULTS.
       setPhase("RESULTS");
     } else {
-      setWrongAttempts((n) => n + 1);
+      setTechniqueWrong((n) => n + 1);
       toast.error("Wrong technique — try again.");
     }
   };
@@ -334,14 +357,19 @@ const ReadDesignsPage = () => {
                 </div>
               </div>
 
-              {/* Both are always YES — you cannot reach RESULTS without succeeding. */}
+              {/* Both phases were passed (you can't reach RESULTS otherwise); each
+                  line reports the try it was solved on (wrong taps + 1). */}
               <div className="flex justify-between items-center bg-[#FAF8F5] border border-[#D9CDB3] p-2.5 rounded-sm text-xs font-bold">
                 <span>PATTERN IDENTIFIED:</span>
-                <span className="text-[#22C55E]">✓ YES</span>
+                <span className="text-[#22C55E]">
+                  ✓ {ordinal(patternWrong + 1).toUpperCase()} TRY
+                </span>
               </div>
               <div className="flex justify-between items-center bg-[#FAF8F5] border border-[#D9CDB3] p-2.5 rounded-sm text-xs font-bold">
                 <span>TECHNIQUE NAMED:</span>
-                <span className="text-[#22C55E]">✓ YES</span>
+                <span className="text-[#22C55E]">
+                  ✓ {ordinal(techniqueWrong + 1).toUpperCase()} TRY
+                </span>
               </div>
 
               {/* Explanation: bold technique name + short_explanation */}

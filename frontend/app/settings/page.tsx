@@ -14,6 +14,7 @@
 
 import { useAuth } from "@clerk/nextjs";
 import { SignInButton } from "@clerk/nextjs";
+import { clerkAppearance } from "@/lib/clerkAppearance";
 import Link from "next/link";
 
 const SettingsPage = () => {
@@ -44,7 +45,7 @@ const SettingsPage = () => {
           </p>
           <div className="flex gap-3 justify-center">
             {/* mode="modal" opens the Clerk sign-up overlay instead of navigating away */}
-            <SignInButton mode="modal">
+            <SignInButton mode="modal" appearance={clerkAppearance}>
               <button className="bg-[#8B2626] text-white px-6 py-2 shadow-[4px_4px_0px_#232323] border-2 border-[#232323] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_#232323] transition-all font-mono uppercase tracking-wider text-sm cursor-pointer">
                 Create Account
               </button>

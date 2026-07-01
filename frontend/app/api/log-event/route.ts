@@ -17,6 +17,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/utils/prismaInit";
 import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
+import { capturePosthog } from "@/utils/posthogServer";
 import type { EventType } from "@/lib/generated/prisma/enums";
 import type { GameMode } from "@/utils/generate_game";
 import { NextRequest, NextResponse } from "next/server";
@@ -48,6 +49,12 @@ export const POST = async (req: NextRequest) => {
         event_type: eventType,
         game_type_id: gameTypeId ?? null,
       },
+    });
+
+    // Mirror SESSION_END to PostHog (same distinctId as the client identify and
+    // the other server-mirrored events). capturePosthog swallows its own errors.
+    await capturePosthog(identifier, eventType, {
+      game_type_id: gameTypeId ?? null,
     });
 
     return NextResponse.json({ success: true });

@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { toast } from "sonner";
+import posthog from "posthog-js";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { saveUserFeedback } from "@/utils/saveUserFeedback";
 import { StarRating } from "@/components/StarRating";
@@ -39,6 +40,11 @@ const SendFeedbackModal = ({
         deviceIdRef.current ?? "",
       );
       if (res.success) {
+        posthog.capture("feedback_submitted", {
+          nps,
+          improvement,
+          has_comments: comments.trim().length > 0,
+        });
         toast.success("Thanks for the feedback!");
         // Reset so a reopened modal starts fresh.
         setNps(0);

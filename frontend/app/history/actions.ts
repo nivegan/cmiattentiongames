@@ -7,23 +7,30 @@
 import { auth } from "@clerk/nextjs/server";
 import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
 import { prisma } from "@/utils/prismaInit";
-import type { GameMode } from "@/utils/generate_game";
+import scheduleData from "@/data/dailySchedule.json";
 // Types live in ./types (not here) because a "use server" file must export only
 // async server actions — see the note in types.ts.
 import type { DayGame, DayGroup, HistoryResult } from "./types";
 
-// The games that count toward a "full day". The denominator in the per-day
-// "X/N" completion count is derived from this list's length, so adding a new
-// daily game here is the only change needed to update the count everywhere.
-const DAILY_GAME_MODES: GameMode[] = [
-  "GUT_CHECK",
-  "EXTRACT_THE_FACTS",
-  "STEADY_GAZE",
-  "CLEAR_THE_AIR",
-  "MENTAL_REFLEX",
-  "READ_BETWEEN_DESIGNS",
-];
-const DAILY_TOTAL = DAILY_GAME_MODES.length;
+// Weekday → scheduled game slugs (same source the home grid reads). Only the
+// *count* per weekday matters here — it's the denominator for a day's "X/N".
+const schedule = scheduleData.schedule as Record<string, string[]>;
+
+// Number of games scheduled for the weekday of an IST calendar date "YYYY-MM-DD".
+// Anchor at noon IST and read the IST weekday so the lookup matches the home
+// grid's lowercase keys (and dodges any day-boundary ambiguity).
+// NOTE: dailySchedule.json is the *current* weekly schedule — there is no record
+// of what was scheduled on a past date, so past days use today's weekday mapping.
+// The per-weekday count is stable even as the specific games rotate.
+const scheduledCountForDateKey = (dateKey: string): number => {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    weekday: "long",
+  })
+    .format(new Date(`${dateKey}T12:00:00+05:30`))
+    .toLowerCase();
+  return (schedule[weekday] ?? []).length;
+};
 
 // Converts a Date object to an IST calendar date string like "2026-06-05".
 // Used to group play timestamps by IST day when computing the streak.
@@ -80,7 +87,6 @@ const fetchHistory = async (deviceId: string): Promise<HistoryResult> => {
     return {
       days: [],
       streak: 0,
-      dailyTotal: DAILY_TOTAL,
       gamesCompleted: 0,
       hasEntries: false,
     };
@@ -111,16 +117,22 @@ const fetchHistory = async (deviceId: string): Promise<HistoryResult> => {
     dayMap.set(key, bucket);
   }
 
-  const days: DayGroup[] = Array.from(dayMap, ([dateKey, b]) => ({
-    dateKey,
-    games: b.games,
-    playedCount: Math.min(b.games.length, DAILY_TOTAL),
-  }));
+  const days: DayGroup[] = Array.from(dayMap, ([dateKey, b]) => {
+    const playedCount = b.games.length; // distinct games played that day
+    const scheduled = scheduledCountForDateKey(dateKey);
+    // max() guards the rare deep-link case of playing an unscheduled game, so
+    // the fraction never exceeds 1 (no "3/2").
+    return {
+      dateKey,
+      games: b.games,
+      playedCount,
+      dailyTotal: Math.max(scheduled, playedCount),
+    };
+  });
 
   return {
     days,
     streak: computeStreak(rows.map((r) => r.created_at)),
-    dailyTotal: DAILY_TOTAL,
     gamesCompleted: rows.length,
     hasEntries: rows.length > 0,
   };
