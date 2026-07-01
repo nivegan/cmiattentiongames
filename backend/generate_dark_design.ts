@@ -86,6 +86,10 @@ export async function generate(customMode: string | null = null, forceRefresh = 
   const offset = now.getTimezoneOffset() * 60000;
   const today = new Date(now.getTime() - offset).toISOString().split('T')[0];
 
+  // FIX: Explicit 24-hour boundary ranges to handle Timestamp/Timezone variations safely
+  const todayStart = `${today}T00:00:00.000Z`;
+  const todayEnd = `${today}T23:59:59.999Z`;
+
   // STRICT KEYS SERIALIZATION MAP ORDER
   const strictJsonReplacerOrder: string[] = [
     "vector_mcq", "question", "options", "text", "ui", "ad", "graph", "correct_vector", "correct_vector_index",
@@ -96,20 +100,31 @@ export async function generate(customMode: string | null = null, forceRefresh = 
   try {
     // NATURAL 24-HOUR DAILY LOCK CHECK
     if (!forceRefresh) {
-      const { data: existing } = await supabase
+      const { data: existingRows } = await supabase
         .from("kalari_games")
         .select("content")
         .eq("mode", mode)
-        .eq("scheduled_for", today)
-        .maybeSingle();
+        .gte("scheduled_for", todayStart)
+        .lte("scheduled_for", todayEnd);
 
-      if (existing && existing.content && typeof existing.content === 'object') {
-        const contentObj = existing.content as Record<string, unknown>;
-        if (contentObj.vector_mcq) {
-          const finalOutput = JSON.stringify(existing.content, strictJsonReplacerOrder, 2);
-          fs.writeFileSync(RESOLVED_OUTPUT_PATH, finalOutput);
-          process.stdout.write(finalOutput);
-          return existing.content as unknown as DarkDesignData;
+      const existing = existingRows && existingRows.length > 0 ? existingRows[0] : null;
+
+      if (existing && existing.content) {
+        let contentObj = existing.content;
+
+        // FIX: Safe-parse if the DB returned the JSON payload as a raw string
+        if (typeof contentObj === 'string') {
+          try { contentObj = JSON.parse(contentObj); } catch (e) {}
+        }
+
+        if (contentObj && typeof contentObj === 'object') {
+          const typedContent = contentObj as Record<string, unknown>;
+          if (typedContent.vector_mcq) {
+            const finalOutput = JSON.stringify(typedContent, strictJsonReplacerOrder, 2);
+            fs.writeFileSync(RESOLVED_OUTPUT_PATH, finalOutput);
+            process.stdout.write(finalOutput);
+            return typedContent as unknown as DarkDesignData;
+          }
         }
       }
     }
@@ -218,11 +233,13 @@ Expected JSON Structure:
     // ==========================================
     // 3. TRANSACTION OVERWRITE SNAPSHOT LAYER
     // ==========================================
+    // FIX: Match exact 24-hour block for deletes to prevent layout mismatches
     await supabase
       .from("kalari_games")
       .delete()
       .eq("mode", mode)
-      .eq("scheduled_for", today);
+      .gte("scheduled_for", todayStart)
+      .lte("scheduled_for", todayEnd);
 
     await supabase.from("kalari_games").insert({
       mode,
@@ -238,7 +255,8 @@ Expected JSON Structure:
     return validated;
   } catch (err) {
     if (err instanceof z.ZodError) {
-      process.stderr.write(JSON.stringify(err.errors, null, 2));
+      // FIX: Property 'errors' changed to 'issues' for proper Zod Typings
+      process.stderr.write(JSON.stringify(err.issues, null, 2));
     } else if (err instanceof Error) {
       process.stderr.write(err.message);
     } else {
@@ -261,7 +279,8 @@ if (currentScript) {
     baseName === "generate_dark_designs.ts";
 
   if (matchesName) {
-    const rawArgv = yargs(hideBin(process.argv)).argv as unknown as YargsArgs;
+    // FIX: Replaced .argv with .parseSync() to compile smoothly in TypeScript ESM environments
+    const rawArgv = yargs(hideBin(process.argv)).parseSync() as unknown as YargsArgs;
     const force = rawArgv.forceRefresh === true || rawArgv.forceRefresh === 'true' || rawArgv.force === true;
     const targetMode = rawArgv.mode || (rawArgv._ && typeof rawArgv._[0] === 'string' ? rawArgv._[0] : null);
 
