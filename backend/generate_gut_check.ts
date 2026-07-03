@@ -157,7 +157,7 @@ Mandatory broad categories to pick from (rotate or select one dynamically):
 
 CRITICAL BAN LIST (NEVER GENERATE THESE):
 Do NOT focus on hyper-niche academic disciplines, marine biology, deep-sea exploration, oceanography, astrophysics, space metrics, 'Mycology', 'Mushroom networks', 'Burj Khalifa', architectural building heights, or specialized scientific lab values.
-Also, absolutely avoid 'Pop Culture', 'Entertainment' or 'Media History' for this run.
+
 
 ANTI-REPETITION FILTER (MEMORY LOOP):
 Avoid themes matching or closely relating to these recent topics:
