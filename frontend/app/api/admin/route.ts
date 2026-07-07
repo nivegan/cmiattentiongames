@@ -1,8 +1,9 @@
 // app/api/admin/route.ts
-// Admin-only analytics endpoint. Returns today's (IST) engagement metrics as
-// JSON, derived entirely from the `daily_funnel` event stream:
-//   - dau            : distinct users who started >=1 game today
-//   - per game       : starts, completes, abandon rate, avg time-spent (sec)
+// Admin-only analytics endpoint. Returns engagement metrics as JSON, derived
+// from the `daily_funnel` event stream plus `user_stats` scores:
+//   - dau     : distinct users who started >=1 game today (IST)
+//   - ranking : all-time totals per game (a stable row for every GameType)
+//   - daily   : per-IST-day log, newest first, one entry per game with activity
 //
 // Access is gated by isAdmin() (Clerk privateMetadata.role === "admin"); this is
 // the second, independent checkpoint — never trust a page-level guard alone,
@@ -11,31 +12,73 @@
 // Metrics are SESSION-based, not user-based: every GAME_START is a session,
 // and a GAME_COMPLETE closes that user's most recent open session. A session
 // that is never closed counts as abandoned — so a user who opens a game,
-// bails, then reopens and finishes shows 2 starts / 1 complete / 50% abandon.
-// Fire-and-forget logging can double-emit an event, so per user+game any
+// bails, then reopens and finishes shows 2 starts / 1 played / 1 abandoned.
+// Fire-and-forget logging can double-emit an event, so per user+game+day any
 // events of the same type within DUPLICATE_WINDOW_MS collapse into one.
+// Sessions are paired within an IST day bucket (games take minutes, so a
+// midnight-crossing session is a negligible edge — its start counts abandoned).
 //
-// "time_spent_sec" is not stored anywhere, so avg time-spent is DERIVED as
-// (GAME_COMPLETE.created_at - paired GAME_START.created_at) per session.
+// "time_spent_sec" is not stored anywhere, so avg completion time is DERIVED
+// as (GAME_COMPLETE.created_at - paired GAME_START.created_at) per session.
 
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/utils/requireAdmin";
 import { prisma } from "@/utils/prismaInit";
-import { getCurrentDayRange } from "@/utils/getCurrentDayRange";
 import { getTodayIST } from "@/utils/seedRng";
+import { toISTDateKey } from "@/utils/toISTDateKey";
 import { EventType, GameType } from "@/lib/generated/prisma/enums";
-
-type GameMetrics = {
-  game: GameType;
-  starts: number; // sessions opened today (GAME_START events, dupes collapsed)
-  completes: number; // sessions completed today
-  abandonRate: number | null; // sessions started but never completed / starts
-  avgTimeSpentSec: number | null; // null if nobody completed this game today
-};
+import type {
+  AdminAnalytics,
+  DailyEntry,
+  GameDayMetrics,
+  RankingRow,
+} from "@/app/admin/types";
 
 // Two identical events from the same user+game closer together than this are
 // treated as one (double-fired log), not two sessions.
 const DUPLICATE_WINDOW_MS = 5_000;
+
+// Sort ascending and collapse double-fired duplicates into one event.
+const dedupe = (times: number[]): number[] => {
+  times.sort((a, b) => a - b);
+  const kept: number[] = [];
+  for (const ms of times) {
+    if (kept.length === 0 || ms - kept[kept.length - 1] > DUPLICATE_WINDOW_MS)
+      kept.push(ms);
+  }
+  return kept;
+};
+
+// Pair each completion with the same user's most recent unpaired start before
+// it — that start's session finished; unpaired starts were abandoned. Returns
+// deduped counts plus the duration (sec) of each finished session.
+const pairSessions = (
+  rawStarts: number[],
+  rawCompletes: number[],
+): { starts: number; completes: number; durations: number[] } => {
+  const starts = dedupe(rawStarts);
+  const completes = dedupe(rawCompletes);
+  const durations: number[] = [];
+  let nextStart = starts.length - 1;
+  for (let c = completes.length - 1; c >= 0; c--) {
+    while (nextStart >= 0 && starts[nextStart] > completes[c]) nextStart--;
+    if (nextStart < 0) break;
+    durations.push((completes[c] - starts[nextStart]) / 1000);
+    nextStart--;
+  }
+  return { starts: starts.length, completes: completes.length, durations };
+};
+
+const mean1dp = (values: number[]): number | null =>
+  values.length > 0
+    ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10
+    : null;
+
+// day -> game -> user -> raw event timestamps
+type FunnelBuckets = Map<
+  string,
+  Map<string, Map<string, { starts: number[]; completes: number[] }>>
+>;
 
 export const GET = async () => {
   try {
@@ -43,114 +86,160 @@ export const GET = async () => {
     if (!(await isAdmin()))
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const { start, end } = getCurrentDayRange();
+    // All-time funnel events + scores (beta-scale tables; two flat queries).
+    const [events, scoreRows] = await Promise.all([
+      prisma.daily_funnel.findMany({
+        where: {
+          event_type: { in: [EventType.GAME_START, EventType.GAME_COMPLETE] },
+          game_type_id: { not: null },
+        },
+        select: {
+          user_id: true,
+          event_type: true,
+          game_type_id: true,
+          created_at: true,
+        },
+      }),
+      prisma.user_stats.findMany({
+        where: { game_type_id: { not: null } },
+        select: { game_type_id: true, score: true, created_at: true },
+      }),
+    ]);
 
-    // Single query: today's GAME_START + GAME_COMPLETE events (both carry a game).
-    const events = await prisma.daily_funnel.findMany({
-      where: {
-        created_at: { gte: start, lte: end },
-        event_type: { in: [EventType.GAME_START, EventType.GAME_COMPLETE] },
-        game_type_id: { not: null },
-      },
-      select: {
-        user_id: true,
-        event_type: true,
-        game_type_id: true,
-        created_at: true,
-      },
-    });
-
-    // Per-game, per-user sorted timestamp lists for each event type.
-    const startAt = new Map<string, Map<string, number[]>>(); // game -> (user -> ms[])
-    const completeAt = new Map<string, Map<string, number[]>>();
+    const todayKey = toISTDateKey(new Date());
     const dau = new Set<string>();
 
-    const remember = (
-      bucket: Map<string, Map<string, number[]>>,
-      game: string,
-      user: string,
-      ms: number,
-    ) => {
-      let byUser = bucket.get(game);
-      if (!byUser) {
-        byUser = new Map();
-        bucket.set(game, byUser);
-      }
-      const times = byUser.get(user);
-      if (times) times.push(ms);
-      else byUser.set(user, [ms]);
-    };
-
+    const funnel: FunnelBuckets = new Map();
     for (const e of events) {
       if (!e.game_type_id) continue;
-      const ms = e.created_at.getTime();
+      const day = toISTDateKey(e.created_at);
+      let byGame = funnel.get(day);
+      if (!byGame) {
+        byGame = new Map();
+        funnel.set(day, byGame);
+      }
+      let byUser = byGame.get(e.game_type_id);
+      if (!byUser) {
+        byUser = new Map();
+        byGame.set(e.game_type_id, byUser);
+      }
+      let bucket = byUser.get(e.user_id);
+      if (!bucket) {
+        bucket = { starts: [], completes: [] };
+        byUser.set(e.user_id, bucket);
+      }
       if (e.event_type === EventType.GAME_START) {
-        dau.add(e.user_id); // DAU = opened app + started >=1 game
-        remember(startAt, e.game_type_id, e.user_id, ms);
-      } else if (e.event_type === EventType.GAME_COMPLETE) {
-        remember(completeAt, e.game_type_id, e.user_id, ms);
+        bucket.starts.push(e.created_at.getTime());
+        if (day === todayKey) dau.add(e.user_id); // DAU = started >=1 game today
+      } else {
+        bucket.completes.push(e.created_at.getTime());
       }
     }
 
-    // Sort ascending and collapse double-fired duplicates into one event.
-    const dedupe = (times: number[]): number[] => {
-      times.sort((a, b) => a - b);
-      const kept: number[] = [];
-      for (const ms of times) {
-        if (
-          kept.length === 0 ||
-          ms - kept[kept.length - 1] > DUPLICATE_WINDOW_MS
-        )
-          kept.push(ms);
+    // day -> game -> scores that IST day
+    const scoresByDay = new Map<string, Map<string, number[]>>();
+    for (const r of scoreRows) {
+      if (!r.game_type_id) continue;
+      const day = toISTDateKey(r.created_at);
+      let byGame = scoresByDay.get(day);
+      if (!byGame) {
+        byGame = new Map();
+        scoresByDay.set(day, byGame);
       }
-      return kept;
+      const list = byGame.get(r.game_type_id);
+      if (list) list.push(r.score);
+      else byGame.set(r.game_type_id, [r.score]);
+    }
+
+    // Per-game all-time accumulators for the ranking table.
+    const totals = new Map<
+      string,
+      { plays: number; starts: number; durations: number[]; scores: number[] }
+    >();
+    const totalFor = (game: string) => {
+      let t = totals.get(game);
+      if (!t) {
+        t = { plays: 0, starts: 0, durations: [], scores: [] };
+        totals.set(game, t);
+      }
+      return t;
     };
 
-    // Emit a stable row for every game so the shape is consistent even at zero.
-    const games: GameMetrics[] = Object.values(GameType).map((game) => {
-      const starters = startAt.get(game) ?? new Map<string, number[]>();
-      const finishers = completeAt.get(game) ?? new Map<string, number[]>();
+    // Daily log: union of days seen in either source, newest first.
+    const allDays = new Set([...funnel.keys(), ...scoresByDay.keys()]);
+    const daily: DailyEntry[] = [...allDays]
+      .sort((a, b) => (a < b ? 1 : -1)) // "YYYY-MM-DD" sorts lexicographically
+      .map((day) => {
+        const byGame = funnel.get(day);
+        const dayScores = scoresByDay.get(day);
+        const gamesToday = new Set([
+          ...(byGame?.keys() ?? []),
+          ...(dayScores?.keys() ?? []),
+        ]);
 
-      let starts = 0;
-      let completes = 0;
-      const durations: number[] = [];
+        const games: GameDayMetrics[] = [...gamesToday].map((game) => {
+          let starts = 0;
+          let completed = 0;
+          const durations: number[] = [];
+          for (const bucket of (
+            byGame?.get(game) ?? new Map<string, never>()
+          ).values()) {
+            const paired = pairSessions(bucket.starts, bucket.completes);
+            starts += paired.starts;
+            completed += paired.completes;
+            durations.push(...paired.durations);
+          }
+          const scores = dayScores?.get(game) ?? [];
+          const played = durations.length;
 
-      const users = new Set([...starters.keys(), ...finishers.keys()]);
-      for (const user of users) {
-        const userStarts = dedupe(starters.get(user) ?? []);
-        const userCompletes = dedupe(finishers.get(user) ?? []);
-        starts += userStarts.length;
-        completes += userCompletes.length;
+          const t = totalFor(game);
+          t.plays += played;
+          t.starts += starts;
+          t.durations.push(...durations);
+          t.scores.push(...scores);
 
-        // Pair each completion with the user's most recent unpaired start
-        // before it — that start's session finished; earlier ones abandoned.
-        let nextStart = userStarts.length - 1;
-        for (let c = userCompletes.length - 1; c >= 0; c--) {
-          while (nextStart >= 0 && userStarts[nextStart] > userCompletes[c])
-            nextStart--;
-          if (nextStart < 0) break;
-          durations.push((userCompletes[c] - userStarts[nextStart]) / 1000);
-          nextStart--;
-        }
-      }
+          return {
+            game: game as GameType,
+            played,
+            starts,
+            completed,
+            abandoned: starts - played,
+            dropOffRate: starts > 0 ? (starts - played) / starts : null,
+            avgTimeSpentSec: mean1dp(durations),
+            avgScore: mean1dp(scores),
+          };
+        });
 
-      // Abandoned = sessions opened today that never reached a completion.
-      // (durations.length, not completes: a completion with no start row
-      // today — e.g. started just before IST midnight — can't excuse one.)
-      const abandonRate =
-        starts > 0 ? (starts - durations.length) / starts : null;
+        return { date: day, games };
+      });
 
-      const avgTimeSpentSec =
-        durations.length > 0
-          ? Math.round(
-              (durations.reduce((a, b) => a + b, 0) / durations.length) * 10,
-            ) / 10
-          : null;
-
-      return { game, starts, completes, abandonRate, avgTimeSpentSec };
+    // Emit a stable ranking row for every game so the shape is consistent
+    // even at zero activity.
+    const ranking: RankingRow[] = Object.values(GameType).map((game) => {
+      const t = totals.get(game) ?? {
+        plays: 0,
+        starts: 0,
+        durations: [],
+        scores: [],
+      };
+      return {
+        game,
+        plays: t.plays,
+        starts: t.starts,
+        abandoned: t.starts - t.plays,
+        dropOffRate: t.starts > 0 ? (t.starts - t.plays) / t.starts : null,
+        avgCompletionTimeSec: mean1dp(t.durations),
+        avgScore: mean1dp(t.scores),
+      };
     });
 
-    return NextResponse.json({ date: getTodayIST(), dau: dau.size, games });
+    const payload: AdminAnalytics = {
+      date: getTodayIST(),
+      dau: dau.size,
+      ranking,
+      daily,
+    };
+    return NextResponse.json(payload);
   } catch (error) {
     console.error("admin analytics route error:", error);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

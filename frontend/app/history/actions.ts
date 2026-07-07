@@ -7,6 +7,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
 import { prisma } from "@/utils/prismaInit";
+import { toISTDateKey } from "@/utils/toISTDateKey";
 import scheduleData from "@/data/dailySchedule.json";
 // Types live in ./types (not here) because a "use server" file must export only
 // async server actions — see the note in types.ts.
@@ -30,17 +31,6 @@ const scheduledCountForDateKey = (dateKey: string): number => {
     .format(new Date(`${dateKey}T12:00:00+05:30`))
     .toLowerCase();
   return (schedule[weekday] ?? []).length;
-};
-
-// Converts a Date object to an IST calendar date string like "2026-06-05".
-// Used to group play timestamps by IST day when computing the streak.
-const toISTDateKey = (date: Date): string => {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata", // convert to IST before extracting the date
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
 };
 
 // Counts consecutive IST calendar days the user played, walking backward from
