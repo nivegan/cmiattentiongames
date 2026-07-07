@@ -8,8 +8,15 @@
 // the second, independent checkpoint — never trust a page-level guard alone,
 // because a route handler is directly callable.
 //
+// Metrics are SESSION-based, not user-based: every GAME_START is a session,
+// and a GAME_COMPLETE closes that user's most recent open session. A session
+// that is never closed counts as abandoned — so a user who opens a game,
+// bails, then reopens and finishes shows 2 starts / 1 complete / 50% abandon.
+// Fire-and-forget logging can double-emit an event, so per user+game any
+// events of the same type within DUPLICATE_WINDOW_MS collapse into one.
+//
 // "time_spent_sec" is not stored anywhere, so avg time-spent is DERIVED as
-// (GAME_COMPLETE.created_at - GAME_START.created_at) per user, per game.
+// (GAME_COMPLETE.created_at - paired GAME_START.created_at) per session.
 
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/utils/requireAdmin";
@@ -20,11 +27,15 @@ import { EventType, GameType } from "@/lib/generated/prisma/enums";
 
 type GameMetrics = {
   game: GameType;
-  starts: number;
-  completes: number;
-  abandonRate: number | null; // (starts - completes) / starts; null if no starts
+  starts: number; // sessions opened today (GAME_START events, dupes collapsed)
+  completes: number; // sessions completed today
+  abandonRate: number | null; // sessions started but never completed / starts
   avgTimeSpentSec: number | null; // null if nobody completed this game today
 };
+
+// Two identical events from the same user+game closer together than this are
+// treated as one (double-fired log), not two sessions.
+const DUPLICATE_WINDOW_MS = 5_000;
 
 export const GET = async () => {
   try {
@@ -49,15 +60,13 @@ export const GET = async () => {
       },
     });
 
-    // Per-game, per-user earliest timestamps. Using the *earliest* event of each
-    // type makes the math robust to any duplicate rows (funnel logging is
-    // fire-and-forget, so a reload could emit a second GAME_START).
-    const startAt = new Map<string, Map<string, number>>(); // game -> (user -> ms)
-    const completeAt = new Map<string, Map<string, number>>();
+    // Per-game, per-user sorted timestamp lists for each event type.
+    const startAt = new Map<string, Map<string, number[]>>(); // game -> (user -> ms[])
+    const completeAt = new Map<string, Map<string, number[]>>();
     const dau = new Set<string>();
 
     const remember = (
-      bucket: Map<string, Map<string, number>>,
+      bucket: Map<string, Map<string, number[]>>,
       game: string,
       user: string,
       ms: number,
@@ -67,8 +76,9 @@ export const GET = async () => {
         byUser = new Map();
         bucket.set(game, byUser);
       }
-      const prev = byUser.get(user);
-      if (prev === undefined || ms < prev) byUser.set(user, ms);
+      const times = byUser.get(user);
+      if (times) times.push(ms);
+      else byUser.set(user, [ms]);
     };
 
     for (const e of events) {
@@ -82,23 +92,54 @@ export const GET = async () => {
       }
     }
 
+    // Sort ascending and collapse double-fired duplicates into one event.
+    const dedupe = (times: number[]): number[] => {
+      times.sort((a, b) => a - b);
+      const kept: number[] = [];
+      for (const ms of times) {
+        if (
+          kept.length === 0 ||
+          ms - kept[kept.length - 1] > DUPLICATE_WINDOW_MS
+        )
+          kept.push(ms);
+      }
+      return kept;
+    };
+
     // Emit a stable row for every game so the shape is consistent even at zero.
     const games: GameMetrics[] = Object.values(GameType).map((game) => {
-      const starters = startAt.get(game) ?? new Map<string, number>();
-      const finishers = completeAt.get(game) ?? new Map<string, number>();
+      const starters = startAt.get(game) ?? new Map<string, number[]>();
+      const finishers = completeAt.get(game) ?? new Map<string, number[]>();
 
-      const starts = starters.size;
-      const completes = finishers.size;
-      const abandonRate = starts > 0 ? (starts - completes) / starts : null;
-
-      // Avg duration over users who both started and completed today.
+      let starts = 0;
+      let completes = 0;
       const durations: number[] = [];
-      for (const [user, completeMs] of finishers) {
-        const startMs = starters.get(user);
-        if (startMs !== undefined && completeMs >= startMs) {
-          durations.push((completeMs - startMs) / 1000);
+
+      const users = new Set([...starters.keys(), ...finishers.keys()]);
+      for (const user of users) {
+        const userStarts = dedupe(starters.get(user) ?? []);
+        const userCompletes = dedupe(finishers.get(user) ?? []);
+        starts += userStarts.length;
+        completes += userCompletes.length;
+
+        // Pair each completion with the user's most recent unpaired start
+        // before it — that start's session finished; earlier ones abandoned.
+        let nextStart = userStarts.length - 1;
+        for (let c = userCompletes.length - 1; c >= 0; c--) {
+          while (nextStart >= 0 && userStarts[nextStart] > userCompletes[c])
+            nextStart--;
+          if (nextStart < 0) break;
+          durations.push((userCompletes[c] - userStarts[nextStart]) / 1000);
+          nextStart--;
         }
       }
+
+      // Abandoned = sessions opened today that never reached a completion.
+      // (durations.length, not completes: a completion with no start row
+      // today — e.g. started just before IST midnight — can't excuse one.)
+      const abandonRate =
+        starts > 0 ? (starts - durations.length) / starts : null;
+
       const avgTimeSpentSec =
         durations.length > 0
           ? Math.round(
