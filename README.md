@@ -22,3 +22,13 @@ Read two short paragraphs on the same topic with opposing narratives. Complete 3
 ### Gut Check | Calibrating Confidence
 
 Three rounds of numerical estimation. Receive an Anchor Statement, answer a Y/N question, then guess the actual number, and submit your confidence. With new topics and questions everyday.
+
+## Reflex & Cognitive Flexibility
+
+### Read Between the Designs | Detecting Manipulation
+
+Identify the dark design pattern among text, Ui, ad, and graphs and the manipulation tactic. Learn deceptive and manipulative patterns with a new set every day.
+
+### Mental Reflex | Breaking Automaticity
+
+Game rule changes every 15 seconds, can you keep up?
