@@ -25,7 +25,7 @@ import Link from "next/link";
 import { Calendar, CheckCircle2, ArrowLeft } from "lucide-react";
 import { fetchHistory } from "./actions";
 import type { HistoryResult } from "./types";
-import type { GameMode } from "@/utils/generate_game";
+import type { GameMode } from "@/utils/gameMode";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 

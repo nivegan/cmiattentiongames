@@ -19,7 +19,7 @@ import { useDeviceId } from "@/hooks/useDeviceId";
 import { fetchPlayedToday } from "@/app/home-actions";
 import { GAME_CATALOG, TIERS } from "@/lib/gameCatalog";
 import type { GameInfo } from "@/lib/gameCatalog";
-import type { GameMode } from "@/utils/generate_game";
+import type { GameMode } from "@/utils/gameMode";
 import { AboutKalariModal } from "@/components/AboutKalariModal";
 import { SendFeedbackModal } from "@/components/SendFeedbackModal";
 import scheduleData from "@/data/dailySchedule.json";

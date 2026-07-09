@@ -16,8 +16,8 @@
 // This integer becomes the seed for mulberry32.
 //
 // WHY NOT Math.sin?
-// generate_game.ts uses Math.sin(hash) which gives a float in (-1, 1) — fine for
-// simple color/speed values. But mulberry32 needs a full 32-bit integer to produce
+// A Math.sin(hash)-style hash gives a float in (-1, 1) — fine for simple
+// color/speed values. But mulberry32 needs a full 32-bit integer to produce
 // well-distributed spawn positions. Using a float as the seed would concentrate
 // all output values in a narrow band, making dot positions cluster together.
 //

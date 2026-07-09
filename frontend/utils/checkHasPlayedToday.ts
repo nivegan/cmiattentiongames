@@ -8,7 +8,7 @@
 import { getCurrentDayRange } from "./getCurrentDayRange";
 import { prisma } from "./prismaInit";
 import { safeFormatToUuid } from "./safeFormatToUuid";
-import type { GameMode } from "./generate_game";
+import type { GameMode } from "./gameMode";
 
 // Returns true if the user already has a score row for this game today.
 const checkHasPlayedToday = async (

@@ -4,7 +4,7 @@
 // is one entry here. Slugs intentionally differ from routes/GameMode values, so
 // this is also the slug → mode/route lookup.
 
-import type { GameMode } from "@/utils/generate_game";
+import type { GameMode } from "@/utils/gameMode";
 
 // The three fixed skill tiers shown on the home page, in display order.
 type Tier = "STANCE" | "STAFF" | "BLADE";

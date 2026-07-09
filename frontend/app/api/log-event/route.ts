@@ -19,7 +19,7 @@ import { prisma } from "@/utils/prismaInit";
 import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
 import { capturePosthog } from "@/utils/posthogServer";
 import type { EventType } from "@/lib/generated/prisma/enums";
-import type { GameMode } from "@/utils/generate_game";
+import type { GameMode } from "@/utils/gameMode";
 import { NextRequest, NextResponse } from "next/server";
 
 export const POST = async (req: NextRequest) => {

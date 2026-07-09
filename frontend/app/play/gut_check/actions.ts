@@ -8,7 +8,8 @@
 //
 // THIS FILE HAS ONE JOB:
 // Check whether the user already played Gut Check today. If not, call
-// generate("GUT_CHECK") to get (or return cached) AI-generated questions.
+// generate() from utils/generate_gut_check.ts to get (or return cached)
+// AI-generated questions.
 //
 // FIRST OF TWO DAILY-LOCK CHECKPOINTS:
 //   1. HERE: prevents serving game content to a user who already played today.
@@ -17,8 +18,8 @@
 //   2. saveUserGameStat (utils/saveUserGameStat.ts): prevents a double-write even
 //      if the user somehow bypassed checkpoint 1 (e.g., two tabs open at once).
 
-import { generate } from "@/utils/generate_game";
-import type { GutCheckGame } from "@/utils/generate_game";
+import { generate } from "@/utils/generate_gut_check";
+import type { GutCheckData } from "@/utils/generate_gut_check";
 import { auth } from "@clerk/nextjs/server";
 import { checkHasPlayedToday } from "@/utils/checkHasPlayedToday";
 
@@ -26,7 +27,7 @@ const fetchServerGameData = async (
   deviceId: string, // anonymous localStorage UUID; ignored when the user is signed in
 ): Promise<{
   success: boolean;
-  data: GutCheckGame | null;
+  data: GutCheckData | null;
   error?: "ALREADY_PLAYED" | "UNKNOWN";
 }> => {
   try {
@@ -47,8 +48,8 @@ const fetchServerGameData = async (
     // generate() checks the kalari_games DB cache first. If a valid row exists
     // for today's date, it returns that cached content immediately.
     // Only calls the Gemini API when no valid cached row is found.
-    const result = await generate("GUT_CHECK");
-    return { success: true, data: result as GutCheckGame };
+    const result = await generate();
+    return { success: true, data: result };
   } catch (error) {
     console.error("Error generating gut check game metadata payload:", error);
     return { success: false, data: null, error: "UNKNOWN" };

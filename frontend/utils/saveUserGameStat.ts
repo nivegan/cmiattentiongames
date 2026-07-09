@@ -19,7 +19,7 @@ import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
 import { prisma } from "@/utils/prismaInit";
 import { checkHasPlayedToday } from "@/utils/checkHasPlayedToday";
 import { capturePosthog } from "@/utils/posthogServer";
-import type { GameMode } from "@/utils/generate_game";
+import type { GameMode } from "@/utils/gameMode";
 
 const saveUserGameStat = async (
   score: number, // the final computed score (0–100)

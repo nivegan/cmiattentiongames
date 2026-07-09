@@ -25,7 +25,7 @@ import { Loader2 } from "lucide-react";
 import { fetchServerGameData } from "./actions";
 import { saveUserGameStat } from "@/utils/saveUserGameStat";
 import { logFunnelEvent } from "@/utils/logFunnelEvent";
-import type { GutCheckGame } from "@/utils/generate_game";
+import type { GutCheckData } from "@/utils/generate_gut_check";
 import { useRouter } from "next/navigation";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { GameShell } from "@/components/GameShell";
@@ -74,7 +74,7 @@ const GutCheckPage = () => {
   const router = useRouter(); // for programmatic navigation (redirect to home)
 
   // AI-generated game content from the server (questions, theme, answers)
-  const [gameData, setGameData] = useState<GutCheckGame | null>(null);
+  const [gameData, setGameData] = useState<GutCheckData | null>(null);
   // true while the server action is fetching game data
   const [isLoading, setIsLoading] = useState<boolean>(true);
   // true while the score is being saved to the DB (prevents double-submit)

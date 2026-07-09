@@ -15,7 +15,7 @@ import { auth } from "@clerk/nextjs/server";
 import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
 import { prisma } from "@/utils/prismaInit";
 import { getCurrentDayRange } from "@/utils/getCurrentDayRange";
-import type { GameMode } from "@/utils/generate_game";
+import type { GameMode } from "@/utils/gameMode";
 
 // Returns true if this user/device has already completed onboarding.
 // Fails open (returns false → show onboarding) so a transient DB error never

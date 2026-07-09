@@ -22,7 +22,7 @@ import { Check, Loader2 } from "lucide-react";
 import { fetchServerGameData } from "./actions";
 import { saveUserGameStat } from "@/utils/saveUserGameStat";
 import { logFunnelEvent } from "@/utils/logFunnelEvent";
-import type { ExtractFactsGame } from "@/utils/generate_game";
+import type { ExtractFactsData } from "@/utils/generate_extract_facts";
 import { useRouter } from "next/navigation";
 import { useDeviceId } from "@/hooks/useDeviceId";
 import { GameShell } from "@/components/GameShell";
@@ -38,7 +38,7 @@ const ExtractFactsPage = () => {
   const router = useRouter(); // for programmatic navigation (redirect to home)
 
   // AI-generated game content (topic, two paragraphs, MCQ questions + answers)
-  const [gameData, setGameData] = useState<ExtractFactsGame | null>(null);
+  const [gameData, setGameData] = useState<ExtractFactsData | null>(null);
   // true while the server action is fetching game data
   const [isLoading, setIsLoading] = useState<boolean>(true);
   // true while the score is being saved (prevents double-submit)

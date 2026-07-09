@@ -4,10 +4,10 @@
 // gut_check/actions.ts — see that file for a detailed explanation.
 //
 // This one checks the "EXTRACT_THE_FACTS" daily lock and fetches AI-generated
-// paragraph + MCQ content via generate("EXTRACT_THE_FACTS").
+// paragraph + MCQ content via generate() from utils/generate_extract_facts.ts.
 
-import { generate } from "@/utils/generate_game";
-import type { ExtractFactsGame } from "@/utils/generate_game";
+import { generate } from "@/utils/generate_extract_facts";
+import type { ExtractFactsData } from "@/utils/generate_extract_facts";
 import { auth } from "@clerk/nextjs/server";
 import { checkHasPlayedToday } from "@/utils/checkHasPlayedToday";
 
@@ -17,7 +17,7 @@ const fetchServerGameData = async (
   deviceId: string,
 ): Promise<{
   success: boolean;
-  data: ExtractFactsGame | null;
+  data: ExtractFactsData | null;
   error?: "ALREADY_PLAYED" | "UNKNOWN";
 }> => {
   try {
@@ -34,8 +34,8 @@ const fetchServerGameData = async (
       }
     }
 
-    const result = await generate("EXTRACT_THE_FACTS");
-    return { success: true, data: result as ExtractFactsGame };
+    const result = await generate();
+    return { success: true, data: result };
   } catch (error) {
     console.error("Error generating extract facts game data payload:", error);
     return { success: false, data: null, error: "UNKNOWN" };

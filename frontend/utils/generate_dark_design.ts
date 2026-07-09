@@ -71,8 +71,8 @@ export async function generate(forceRefresh = false): Promise<DarkDesignData> {
   const offset = now.getTimezoneOffset() * 60000;
   const today = new Date(now.getTime() - offset).toISOString().split("T")[0];
   // kalari_games.scheduled_for is a DateTime column — Prisma rejects a bare
-  // "YYYY-MM-DD" string. Store the date at UTC midnight (same convention as
-  // utils/generate_game.ts) so the (mode, scheduled_for) cache key is stable.
+  // "YYYY-MM-DD" string. Store the date at UTC midnight (same convention as the
+  // other generators) so the (mode, scheduled_for) cache key is stable.
   const todayDate = new Date(`${today}T00:00:00.000Z`);
 
   try {

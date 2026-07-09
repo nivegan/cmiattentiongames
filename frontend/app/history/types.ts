@@ -5,7 +5,7 @@
 // transform, which references the (erased) type name at runtime and throws
 // "X is not defined". Imported types, by contrast, erase cleanly in annotations.
 
-import type { GameMode } from "@/utils/generate_game";
+import type { GameMode } from "@/utils/gameMode";
 
 // A single game played on a given day — just enough to render its pill.
 interface DayGame {
