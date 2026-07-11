@@ -291,9 +291,6 @@ Expected JSON Structure:
       }),
     ]);
 
-    const finalOutput = JSON.stringify(validated, strictJsonReplacerOrder, 2);
-    process.stdout.write(finalOutput);
-
     return validated;
   } catch (err: unknown) {
     if (err instanceof z.ZodError) {

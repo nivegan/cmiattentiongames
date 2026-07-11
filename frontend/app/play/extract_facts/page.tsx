@@ -383,7 +383,7 @@ const ExtractFactsPage = () => {
                   className="w-full h-32 bg-[#FAF8F5] border-2 border-[#3A221D] p-3 text-[13px] font-mono leading-relaxed placeholder:text-[#3A221D]/30 text-[#3A221D] rounded-sm focus:outline-none focus:ring-2 focus:ring-[#8B2626]/20 focus-visible:ring-0 focus-visible:border-[#3A221D] field-sizing-fixed resize-none shadow-inner"
                 />
                 <div className="absolute bottom-2.5 right-3 text-[9px] font-bold px-1.5 py-0.5 rounded-xs bg-[#1C261F] text-[#42F56C] border border-[#2D3B31]">
-                  {takeawayWordCount} / 10 WORDS
+                  MIN 10 WORDS
                 </div>
               </div>
               <p className="text-[11px] font-medium leading-tight text-[#8B2626]">
@@ -435,7 +435,7 @@ const ExtractFactsPage = () => {
                     return (
                       <div key={idx} className="text-[11px] space-y-1">
                         <div className="flex justify-between font-bold">
-                          <span className="text-[#3A221D]">Q{idx + 1}:</span>
+                          <span className="text-[#3A221D]">Q{idx + 1}</span>
                           <span
                             className={
                               isUserCorrect

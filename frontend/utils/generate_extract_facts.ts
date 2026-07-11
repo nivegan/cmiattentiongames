@@ -118,8 +118,6 @@ const generate = async (
         if (contentObj && typeof contentObj === "object") {
           const typedContent = contentObj as Record<string, unknown>;
           if (typedContent.topic) {
-            const finalOutput = JSON.stringify(typedContent, null, 2);
-            process.stdout.write(finalOutput);
             return typedContent as unknown as ExtractFactsData;
           }
         }
@@ -225,8 +223,6 @@ Expected JSON Structure:
       }),
     ]);
 
-    const finalOutput = JSON.stringify(validated, null, 2);
-    process.stdout.write(finalOutput);
 
     return validated;
   } catch (err: unknown) {
