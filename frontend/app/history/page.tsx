@@ -27,6 +27,7 @@ import { fetchHistory, fetchWeeklySummaries } from "./actions";
 import type { HistoryResult, WeeklySummaryEntry } from "./types";
 import type { GameMode } from "@/utils/gameMode";
 import { formatWeekLabel } from "@/lib/formatWeekLabel";
+import { renderBoldCopy } from "@/lib/richCopy";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 
@@ -200,9 +201,9 @@ const HistoryPage = () => {
                       </span>
                     </div>
 
-                    {/* Witty weekly summary line */}
+                    {/* Witty weekly summary line (may contain **bold** spans) */}
                     <p className="text-sm text-stone-600 italic">
-                      {week.payload.summary_copy}
+                      {renderBoldCopy(week.payload.summary_copy)}
                     </p>
 
                     {/* Per-game play ratios */}

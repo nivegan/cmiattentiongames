@@ -16,12 +16,9 @@ import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
 import { prisma } from "@/utils/prismaInit";
 import { getCurrentDayRange } from "@/utils/getCurrentDayRange";
 import { getCompletedWeekRange } from "@/utils/weekRange";
-import { computeAndUpsertSummaryForUser } from "@/utils/weeklySummary";
+import { getOrGenerateWeeklySummary } from "@/utils/weeklyReviewFallback";
 import type { GameMode } from "@/utils/gameMode";
-import type {
-  WeeklyReviewResult,
-  WeeklySummaryPayload,
-} from "@/utils/weeklySummaryTypes";
+import type { WeeklyReviewResult } from "@/utils/weeklySummaryTypes";
 
 // Returns true if this user/device has already completed onboarding.
 // Fails open (returns false → show onboarding) so a transient DB error never
@@ -111,26 +108,16 @@ const fetchWeeklyReview = async (): Promise<WeeklyReviewResult> => {
     const dbUuid = safeFormatToUuid(userId);
     const range = getCompletedWeekRange();
 
-    const row = await prisma.weekly_summaries.findUnique({
-      where: {
-        user_id_week_start_date: {
-          user_id: dbUuid,
-          week_start_date: range.weekStartDate,
-        },
-      },
-    });
-    if (row?.dismissed_at) return { show: false };
-
-    const payload = row
-      ? (row.payload as unknown as WeeklySummaryPayload)
-      : await computeAndUpsertSummaryForUser(dbUuid, range); // lazy fallback
-    if (!payload) return { show: false }; // brand-new user — nothing to review
+    // Fetches the row, running the endpoint's batch once if the cron hasn't
+    // produced it yet; null = brand-new user with nothing to review.
+    const row = await getOrGenerateWeeklySummary(dbUuid, range);
+    if (!row || row.dismissed_at) return { show: false };
 
     return {
       show: true,
       weekStartKey: range.weekStartKey,
       weekEndKey: range.weekEndKey,
-      payload,
+      payload: row.payload,
     };
   } catch (error) {
     console.error("Error fetching weekly review:", error);

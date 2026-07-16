@@ -244,12 +244,42 @@ export const GET = async (req: NextRequest) => {
 
   // Default baseline parameter configurations
   const adjustments: Record<string, DifficultyParams> = {
-    extract_facts: { max_word_count: 150, speed_multiplier: 1.0, variance_multiplier: 1.0, distractor_count: 5 },
-    read_designs: { max_word_count: 200, speed_multiplier: 1.0, variance_multiplier: 1.0, distractor_count: 5 },
-    steady_gaze: { max_word_count: 150, speed_multiplier: 1.0, variance_multiplier: 1.0, distractor_count: 5 },
-    clear_air: { max_word_count: 150, speed_multiplier: 1.0, variance_multiplier: 1.0, distractor_count: 5 },
-    gut_check: { max_word_count: 150, speed_multiplier: 1.0, variance_multiplier: 1.0, distractor_count: 5 },
-    mental_reflex: { max_word_count: 150, speed_multiplier: 1.0, variance_multiplier: 1.0, distractor_count: 5 },
+    extract_facts: {
+      max_word_count: 150,
+      speed_multiplier: 1.0,
+      variance_multiplier: 1.0,
+      distractor_count: 5,
+    },
+    read_designs: {
+      max_word_count: 200,
+      speed_multiplier: 1.0,
+      variance_multiplier: 1.0,
+      distractor_count: 5,
+    },
+    steady_gaze: {
+      max_word_count: 150,
+      speed_multiplier: 1.0,
+      variance_multiplier: 1.0,
+      distractor_count: 5,
+    },
+    clear_air: {
+      max_word_count: 150,
+      speed_multiplier: 1.0,
+      variance_multiplier: 1.0,
+      distractor_count: 5,
+    },
+    gut_check: {
+      max_word_count: 150,
+      speed_multiplier: 1.0,
+      variance_multiplier: 1.0,
+      distractor_count: 5,
+    },
+    mental_reflex: {
+      max_word_count: 150,
+      speed_multiplier: 1.0,
+      variance_multiplier: 1.0,
+      distractor_count: 5,
+    },
   };
 
   // -----------------------------------------------------------------------
@@ -266,17 +296,13 @@ export const GET = async (req: NextRequest) => {
 
     if (parsedLogs.length >= 5) {
       Object.keys(adjustments).forEach((gameId) => {
-        const gameSubset = parsedLogs.filter(
-          (l) => l.game_type_id === gameId,
-        );
+        const gameSubset = parsedLogs.filter((l) => l.game_type_id === gameId);
 
         if (gameSubset.length >= 5) {
           const abandoned = gameSubset.filter(
             (l) => l.status === "ABANDONED",
           ).length;
-          const completed = gameSubset.filter(
-            (l) => l.status === "COMPLETED",
-          );
+          const completed = gameSubset.filter((l) => l.status === "COMPLETED");
           const wins = completed.filter(
             (l) => (l.final_score ?? 0) >= 75,
           ).length;
@@ -424,7 +450,8 @@ export const GET = async (req: NextRequest) => {
           .trim();
         const parsed = JSON.parse(rawText);
 
-        if (gameType === "gut_check") finalPayload = GutCheckSchema.parse(parsed);
+        if (gameType === "gut_check")
+          finalPayload = GutCheckSchema.parse(parsed);
         else if (gameType === "extract_facts")
           finalPayload = ExtractFactsSchema.parse(parsed);
         else finalPayload = parsed; // read_designs stored unvalidated (as in the original)
@@ -433,8 +460,7 @@ export const GET = async (req: NextRequest) => {
         finalPayload = {
           theme_title: `Automatic Generation Run ${gameType} for Tomorrow`,
           scheduled_timestamp: Date.now(),
-          distractor_shapes_count:
-            adjustments.mental_reflex.distractor_count,
+          distractor_shapes_count: adjustments.mental_reflex.distractor_count,
         };
       }
 

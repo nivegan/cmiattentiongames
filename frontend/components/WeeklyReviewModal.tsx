@@ -13,6 +13,7 @@ import { X, Trophy } from "lucide-react";
 import confetti from "canvas-confetti";
 import { GAME_CATALOG } from "@/lib/gameCatalog";
 import { formatWeekLabel } from "@/lib/formatWeekLabel";
+import { renderBoldCopy } from "@/lib/richCopy";
 import type { WeeklySummaryPayload } from "@/utils/weeklySummaryTypes";
 
 // Look up a display label for the best game's GameMode value.
@@ -91,9 +92,9 @@ const WeeklyReviewModal = ({
             Week {formatWeekLabel(weekStartKey, weekEndKey)}
           </div>
 
-          {/* Witty summary line */}
+          {/* Witty summary line (may contain **bold** spans) */}
           <p className="text-base font-bold text-[#232323] leading-snug">
-            {payload.summary_copy}
+            {renderBoldCopy(payload.summary_copy)}
           </p>
 
           {/* Games played breakdown */}

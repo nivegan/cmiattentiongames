@@ -1,7 +1,7 @@
 // app/api/cron/generate-weekly/route.ts
 // Cron endpoint that batch-generates weekly review summaries (US 4.3).
-// Scheduled in vercel.json for Saturday 19:30 UTC = Sunday 01:00 IST, right
-// after the IST week (Sunday → Saturday) closes.
+// Scheduled in vercel.json for Sunday 19:00 UTC = Monday 00:30 IST, right
+// after the IST week (Monday → Sunday) closes.
 //
 // Auth: Vercel cron invocations automatically send
 // `Authorization: Bearer ${CRON_SECRET}` when the CRON_SECRET env var is set
@@ -14,7 +14,8 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { generateWeeklySummaries } from "@/utils/weeklySummary";
+import { generateWeeklySummaries } from "@/utils/weekly_summary_endpoint";
+import { getCompletedWeekRange } from "@/utils/weekRange";
 import { capturePosthog } from "@/utils/posthogServer";
 
 // Batch loops all users; allow more than the default function duration.
@@ -27,9 +28,15 @@ export const GET = async (req: NextRequest) => {
   }
 
   try {
-    const result = await generateWeeklySummaries();
-    void capturePosthog("system_cron", "weekly_summaries_generated", result);
-    return NextResponse.json({ ok: true, ...result });
+    // generateWeeklySummaries returns void (the file mirrors the backend
+    // original), so the week key for the response comes from the same shared
+    // range helper the generator uses.
+    const { weekStartKey } = getCompletedWeekRange();
+    await generateWeeklySummaries();
+    void capturePosthog("system_cron", "weekly_summaries_generated", {
+      weekStartKey,
+    });
+    return NextResponse.json({ ok: true, weekStartKey });
   } catch (error) {
     console.error("generate-weekly route error:", error);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

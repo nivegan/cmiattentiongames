@@ -1,10 +1,10 @@
 // utils/weekRange.ts
 // Single source of truth for weekly-review week boundaries.
 //
-// A "week" is the IST (Asia/Kolkata) Sunday → Saturday span, matching the
+// A "week" is the IST (Asia/Kolkata) Monday → Sunday span, matching the
 // platform's IST day boundary (see getCurrentDayRange.ts / toISTDateKey.ts).
-// getCompletedWeekRange returns the MOST RECENTLY COMPLETED week — on a Sunday
-// that's the week that ended yesterday (Saturday); on any other day it's the
+// getCompletedWeekRange returns the MOST RECENTLY COMPLETED week — on a Monday
+// that's the week that ended yesterday (Sunday); on any other day it's the
 // same week (the current, in-progress week is never returned).
 //
 // weekStartDate is a UTC-midnight Date because weekly_summaries.week_start_date
@@ -15,11 +15,11 @@
 import { toISTDateKey } from "@/utils/toISTDateKey";
 
 interface WeekRange {
-  weekStartKey: string; // IST "YYYY-MM-DD" of the week's Sunday — the DB key
-  weekEndKey: string; // IST "YYYY-MM-DD" of the week's Saturday
+  weekStartKey: string; // IST "YYYY-MM-DD" of the week's Monday — the DB key
+  weekEndKey: string; // IST "YYYY-MM-DD" of the week's Sunday
   weekStartDate: Date; // UTC-midnight Date for the @db.Date PK column
   windowStart: Date; // inclusive lower bound for user_stats.created_at queries
-  windowEnd: Date; // inclusive upper bound (Saturday 23:59:59.999 IST)
+  windowEnd: Date; // inclusive upper bound (Sunday 23:59:59.999 IST)
 }
 
 const DAY_MS = 86_400_000;
@@ -40,9 +40,10 @@ const getCompletedWeekRange = (now: Date = new Date()): WeekRange => {
   const anchor = new Date(`${todayKey}T12:00:00+05:30`);
 
   const weekday = istWeekdayIndex(now);
-  // Most recent Sunday whose week (through Saturday) has fully elapsed:
-  // Sunday → 7 days back (last week's Sunday), Monday → 8, … Saturday → 13.
-  const daysBack = weekday === 0 ? 7 : weekday + 7;
+  // Previous week's Monday: days elapsed since this week's Monday, plus 7.
+  // Monday → 7 days back (last week's Monday), Tuesday → 8, … Sunday → 13.
+  const daysSinceMonday = weekday === 0 ? 6 : weekday - 1;
+  const daysBack = daysSinceMonday + 7;
 
   const weekStartKey = toISTDateKey(
     new Date(anchor.getTime() - daysBack * DAY_MS),

@@ -1,22 +1,8 @@
-import { createClient } from "@supabase/supabase-js";
-import * as dotenv from "dotenv";
+import { prisma } from "./prismaInit";
+import { getCompletedWeekRange } from "./weekRange";
 
 // ==========================================
-// 1. ENVIRONMENT CONFIGURATION & VALIDATION
-// ==========================================
-dotenv.config({ path: ".env.local" });
-
-const { SUPABASE_URL, SUPABASE_KEY, GOOGLE_GENERATIVE_AI_API_KEY } =
-  process.env;
-
-if (!SUPABASE_URL || !SUPABASE_KEY || !GOOGLE_GENERATIVE_AI_API_KEY) {
-  throw new Error("Missing required environment variables in .env.local");
-}
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-// ==========================================
-// 2. PERFORMANCE MATRIX CONFIGURATION
+// 1. PERFORMANCE MATRIX CONFIGURATION
 // ==========================================
 const ALL_SIX_GAMES = [
   { id: "EXTRACT_THE_FACTS", name: "Extract the Facts", max: 3 },
@@ -29,53 +15,38 @@ const ALL_SIX_GAMES = [
 
 interface UserStatRow {
   user_id: string;
-  game_type_id: string;
+  game_type_id: string | null;
   score: number;
   is_success: boolean;
-  reaction_time_ms: number;
+  reaction_time_ms: number | null;
 }
 
 // ==========================================
-// 3. CORE PROCESSING LOGIC
+// 2. CORE PROCESSING LOGIC
 // ==========================================
 async function generateWeeklySummaries() {
   try {
     console.log("⚡ Starting weekly performance table generation...");
 
-    // Calculate window: Previous week's Monday 00:00:00 to Sunday 23:59:59
-    const now = new Date();
-    const currentDayIndex = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-
-    // Determine days elapsed since this current week's Monday
-    const daysSinceMonday = currentDayIndex === 0 ? 6 : currentDayIndex - 1;
-
-    // Go back to the Monday of the previous week (days elapsed this week + 7 full days)
-    const startMonday = new Date(now);
-    startMonday.setDate(now.getDate() - (daysSinceMonday + 7));
-    startMonday.setHours(0, 0, 0, 0);
-
-    // End on the Sunday of that week (+6 days from that Monday)
-    const endSunday = new Date(startMonday);
-    endSunday.setDate(startMonday.getDate() + 6);
-    endSunday.setHours(23, 59, 59, 999);
-
-    const weekStartISO = startMonday.toISOString();
-    const weekEndISO = endSunday.toISOString();
-    const weekStartKey = weekStartISO.split("T")[0];
+    // Calculate window: Previous week's Monday 00:00:00 to Sunday 23:59:59.
+    // IST via the shared helper — the one approved fix over the original's
+    // server-local computation (which desyncs on UTC hosts like Vercel).
+    // weekStartDate is UTC-midnight for the @db.Date column; windowStart/End
+    // bound the user_stats query in IST.
+    const { weekStartKey, weekEndKey, weekStartDate, windowStart, windowEnd } =
+      getCompletedWeekRange();
 
     console.log(
-      `Date Window: [Monday ${weekStartKey}] -> [Sunday ${weekEndISO.split("T")[0]}]`,
+      `Date Window: [Monday ${weekStartKey}] -> [Sunday ${weekEndKey}]`,
     );
 
     // Fetch all unique user IDs to catch 0-game profiles
-    const { data: userRows, error: userError } = await supabase
-      .from("user_stats")
-      .select("user_id");
+    const userRows = await prisma.user_stats.findMany({
+      select: { user_id: true },
+      distinct: ["user_id"],
+    });
 
-    if (userError) throw userError;
-    const allUniqueUsers = Array.from(
-      new Set((userRows || []).map((r) => r.user_id)),
-    );
+    const allUniqueUsers = userRows.map((r) => r.user_id);
 
     if (allUniqueUsers.length === 0) {
       console.log(" No entries in user_stats to aggregate.");
@@ -83,14 +54,23 @@ async function generateWeeklySummaries() {
     }
 
     // Fetch target window performance logs
-    const { data: records, error: fetchError } = await supabase
-      .from("user_stats")
-      .select("user_id, game_type_id, score, is_success, reaction_time_ms")
-      .gte("created_at", weekStartISO)
-      .lte("created_at", weekEndISO);
+    const records = await prisma.user_stats.findMany({
+      where: {
+        created_at: {
+          gte: windowStart,
+          lte: windowEnd,
+        },
+      },
+      select: {
+        user_id: true,
+        game_type_id: true,
+        score: true,
+        is_success: true,
+        reaction_time_ms: true,
+      },
+    });
 
-    if (fetchError) throw fetchError;
-    const safeRecords = (records || []) as UserStatRow[];
+    const safeRecords = records as UserStatRow[];
 
     // Iterate through profiles to calculate and compile the JSON payloads
     for (const userId of allUniqueUsers) {
@@ -111,7 +91,7 @@ async function generateWeeklySummaries() {
         totalReactionTime += row.reaction_time_ms || 0;
         grandTotalScore += scoreVal;
 
-        if (statsMap[row.game_type_id]) {
+        if (row.game_type_id && statsMap[row.game_type_id]) {
           statsMap[row.game_type_id].played++;
           statsMap[row.game_type_id].totalScore += scoreVal;
         }
@@ -246,28 +226,41 @@ async function generateWeeklySummaries() {
       };
 
       // Write the complete compiled payload directly into the weekly_summaries table
-      const { error: upsertError } = await supabase
-        .from("weekly_summaries")
-        .upsert({
-          user_id: userId,
-          week_start_date: weekStartKey,
-          payload: payload,
+      try {
+        await prisma.weekly_summaries.upsert({
+          where: {
+            user_id_week_start_date: {
+              user_id: userId,
+              week_start_date: weekStartDate,
+            },
+          },
+          update: {
+            payload,
+          },
+          create: {
+            user_id: userId,
+            week_start_date: weekStartDate,
+            payload,
+          },
         });
-
-      if (upsertError) {
+        console.log(` Stored summary payload for user: ${userId}`);
+      } catch (upsertError: unknown) {
         console.error(
           ` Database write failed for user ${userId}:`,
-          upsertError.message,
+          upsertError instanceof Error ? upsertError.message : upsertError,
         );
-      } else {
-        console.log(` Stored summary payload for user: ${userId}`);
       }
     }
 
     console.log("\n Generation processing finished successfully.");
-  } catch (err: any) {
-    console.error("Execution breakdown error:", err.message);
+  } catch (err: unknown) {
+    console.error(
+      "Execution breakdown error:",
+      err instanceof Error ? err.message : err,
+    );
+  } finally {
+    await prisma.$disconnect();
   }
 }
 
-generateWeeklySummaries();
+export { generateWeeklySummaries };
