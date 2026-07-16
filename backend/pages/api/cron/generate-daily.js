@@ -1,18 +1,22 @@
 import { IncomingMessage, ServerResponse } from "http";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { GoogleGenAI } from "@google/genai";
+import dotenv from "dotenv";
 
-const {
-  SUPABASE_URL,
-  SUPABASE_KEY,
-  GOOGLE_GENERATIVE_AI_API_KEY,
-} = process.env;
+dotenv.config({ path: ".env.local" });
 
-if (!SUPABASE_URL || !SUPABASE_KEY || !GOOGLE_GENERATIVE_AI_API_KEY) {
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+const geminiApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+if (!supabaseUrl || !supabaseKey || !geminiApiKey) {
   throw new Error("[System Setup Error] Missing required environment variables (SUPABASE_URL, SUPABASE_KEY, or GOOGLE_GENERATIVE_AI_API_KEY).");
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Use non-null assertion (!) to guarantee type-safety
+const supabase = createClient(supabaseUrl!, supabaseKey!);
+const ai = new GoogleGenAI({ apiKey: geminiApiKey! });
 
 // =========================================================================
 // 1. LIGHTWEIGHT TYPES TO BYPASS "NEXT" MODULE DEPENDENCY ERRORS
@@ -21,6 +25,7 @@ interface CustomRequest extends IncomingMessage {
   query: Partial<{ [key: string]: string | string[] }>;
   cookies: { [key: string]: string };
   body: any;
+  method?: string;
 }
 
 interface CustomResponse extends ServerResponse {
@@ -42,9 +47,36 @@ const ExtractFactsSchema = z.object({
         question: z.string(),
         options: z.array(z.string()).length(4),
         correct_answer_index: z.preprocess(
-          (val) => parseInt(val as string, 10),
+          (val: unknown) => {
+            if (typeof val === "string") return parseInt(val, 10);
+            if (typeof val === "number") return val;
+            return NaN;
+          },
           z.number().min(0).max(3),
         ),
+      }),
+    )
+    .length(3),
+  takeaway_criteria: z.array(z.string()).min(3).max(5),
+});
+
+const ReadBetweenDesignsSchema = z.object({
+  theme_title: z.string(),
+  copy_block: z.string(),
+  mcq_questions: z
+    .array(
+      z.object({
+        question: z.string(),
+        options: z.array(z.string()).length(4),
+        correct_answer_index: z.preprocess(
+          (val: unknown) => {
+            if (typeof val === "string") return parseInt(val, 10);
+            if (typeof val === "number") return val;
+            return NaN;
+          },
+          z.number().min(0).max(3),
+        ),
+        is_confirmation_bias_trap: z.boolean().optional(),
       }),
     )
     .length(3),
@@ -57,14 +89,21 @@ const GutCheckSchema = z.object({
       z.object({
         anchor_statement: z.string(),
         is_anchor_true: z.preprocess(
-          (val) =>
-            typeof val === "string"
-              ? val.toLowerCase() === "true"
-              : Boolean(val),
+          (val: unknown) => {
+            if (typeof val === "string") return val.toLowerCase() === "true";
+            return Boolean(val);
+          },
           z.boolean(),
         ),
         the_real_question: z.string(),
-        the_real_number: z.preprocess((val) => parseFloat(val as string), z.number()),
+        the_real_number: z.preprocess(
+          (val: unknown) => {
+            if (typeof val === "string") return parseFloat(val);
+            if (typeof val === "number") return val;
+            return NaN;
+          },
+          z.number(),
+        ),
         unit: z.string(),
         difficulty_level: z.string(),
       }),
@@ -84,7 +123,7 @@ const SteadyGazeSchema = z.object({
   max_expansion_cap_seconds: z.number(),
 });
 
-const ClearAirSchema = z.object({
+const ClearTheAirSchema = z.object({
   theme_title: z.string(),
   bubble_speed: z.number(),
   initial_distraction_ratio: z.number(),
@@ -93,6 +132,21 @@ const ClearAirSchema = z.object({
   bubble_acceleration_factor: z.number(),
   smudge_opacity_penalty: z.number(),
 });
+
+interface LogRow {
+  game_type_id: string;
+  status: "COMPLETED" | "ABANDONED" | "TIMED_OUT";
+  final_score: number | null;
+  difficulty: number | null;
+  created_at: string;
+}
+
+interface DifficultyParams {
+  max_word_count: number;
+  speed_multiplier: number;
+  variance_multiplier: number;
+  distractor_count: number;
+}
 
 // =========================================================================
 // 3. MATHEMATICAL GENERATOR UTILITIES
@@ -137,8 +191,8 @@ function generateSteadyGazeParams(today: string, speedMultiplier: number): z.inf
   };
 }
 
-function generateClearAirParams(today: string, speedMultiplier: number): z.infer<typeof ClearAirSchema> {
-  const seed = getDailySeed(today + "clear_air");
+function generateClearTheAirParams(today: string, speedMultiplier: number): z.infer<typeof ClearTheAirSchema> {
+  const seed = getDailySeed(today + "clear_the_air");
   const variantId = Math.floor(seed * 1000);
   const calculatedSpeed = parseFloat((1.2 + seed * 2.3).toFixed(2));
   
@@ -154,25 +208,13 @@ function generateClearAirParams(today: string, speedMultiplier: number): z.infer
 }
 
 // =========================================================================
-// 4. TYPES & STORAGE FOR REFLECTION ENGINE
-// =========================================================================
-interface LogRow {
-  game_type_id: string;
-  status: "COMPLETED" | "ABANDONED" | "TIMED_OUT";
-  final_score: number | null;
-}
-
-interface DifficultyParams {
-  max_word_count: number;
-  speed_multiplier: number;
-  variance_multiplier: number;
-  distractor_count: number;
-}
-
-// =========================================================================
-// 5. MAIN ENDPOINT HANDLER
+// 4. MAIN ENDPOINT HANDLER
 // =========================================================================
 export default async function handler(req: CustomRequest, res: CustomResponse) {
+  if (req.method !== "POST" && req.method !== "GET") {
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
+
   const now = new Date();
   const tomorrowDateObj = new Date(now);
   tomorrowDateObj.setDate(now.getDate() + 1);
@@ -181,99 +223,114 @@ export default async function handler(req: CustomRequest, res: CustomResponse) {
   const daysOfWeek = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
   const dayName = daysOfWeek[tomorrowDateObj.getDay()];
 
-  // Standardized Schedule mapping
   const scheduleMap: Record<string, string[]> = {
-    monday: ["extract_facts", "mental_reflex"],
-    tuesday: ["gut_check", "steady_gaze"],
-    wednesday: ["read_designs", "clear_air"],
-    thursday: ["extract_facts", "steady_gaze"],
-    friday: ["gut_check", "mental_reflex"],
-    saturday: ["read_designs", "clear_air"],
-    sunday: ["gut_check", "mental_reflex"]
+    monday: ["EXTRACT_THE_FACTS", "MENTAL_REFLEX"],
+    tuesday: ["GUT_CHECK", "STEADY_GAZE"],
+    wednesday: ["READ_BETWEEN_DESIGNS", "CLEAR_THE_AIR"],
+    thursday: ["EXTRACT_THE_FACTS", "STEADY_GAZE"],
+    friday: ["GUT_CHECK", "MENTAL_REFLEX"],
+    saturday: ["READ_BETWEEN_DESIGNS", "CLEAR_THE_AIR"],
+    sunday: ["GUT_CHECK", "MENTAL_REFLEX"]
   };
 
-  const activeGameTypes = scheduleMap[dayName] || ["extract_facts", "mental_reflex"];
+  const activeGameTypes = scheduleMap[dayName] || ["EXTRACT_THE_FACTS", "MENTAL_REFLEX"];
   const executionTraces: string[] = [];
 
-  // Default baseline parameter configurations
-  const adjustments: Record<string, DifficultyParams> = {
-    extract_facts: { max_word_count: 150, speed_multiplier: 1.0, variance_multiplier: 1.0, distractor_count: 5 },
-    read_designs: { max_word_count: 200, speed_multiplier: 1.0, variance_multiplier: 1.0, distractor_count: 5 },
-    steady_gaze: { max_word_count: 150, speed_multiplier: 1.0, variance_multiplier: 1.0, distractor_count: 5 },
-    clear_air: { max_word_count: 150, speed_multiplier: 1.0, variance_multiplier: 1.0, distractor_count: 5 },
-    gut_check: { max_word_count: 150, speed_multiplier: 1.0, variance_multiplier: 1.0, distractor_count: 5 },
-    mental_reflex: { max_word_count: 150, speed_multiplier: 1.0, variance_multiplier: 1.0, distractor_count: 5 }
+  const calculatedDifficulties: Record<string, number> = {
+    EXTRACT_THE_FACTS: 1.0,
+    READ_BETWEEN_DESIGNS: 1.0,
+    STEADY_GAZE: 1.0,
+    CLEAR_THE_AIR: 1.0,
+    GUT_CHECK: 1.0,
+    MENTAL_REFLEX: 1.0
   };
 
-  // -----------------------------------------------------------------------
-  // PIPELINE PHASE 1: TELEMETRY ANALYSIS ENGINE
-  // -----------------------------------------------------------------------
   try {
-    const sevenDaysAgo = new Date(now);
-    sevenDaysAgo.setDate(now.getDate() - 7);
+    const currentDayIndex = now.getDay(); 
+    const daysSinceMonday = currentDayIndex === 0 ? 6 : currentDayIndex - 1;
+    
+    const startMonday = new Date(now);
+    startMonday.setDate(now.getDate() - (daysSinceMonday + 7));
+    startMonday.setHours(0, 0, 0, 0);
+
+    const endSunday = new Date(startMonday);
+    endSunday.setDate(startMonday.getDate() + 6);
+    endSunday.setHours(23, 59, 59, 999);
+
+    const weekStartISO = startMonday.toISOString();
+    const weekEndISO = endSunday.toISOString();
 
     const { data: recentLogs, error: logError } = await supabase
       .from("game_logs")
-      .select("game_type_id, status, final_score")
-      .gte("created_at", sevenDaysAgo.toISOString());
+      .select("game_type_id, status, final_score, difficulty, created_at")
+      .gte("created_at", weekStartISO)
+      .lte("created_at", weekEndISO);
 
     if (logError) throw logError;
     const parsedLogs = (recentLogs || []) as LogRow[];
 
-    if (parsedLogs.length >= 5) {
-      Object.keys(adjustments).forEach((gameId) => {
-        const gameSubset = parsedLogs.filter(l => l.game_type_id === gameId);
-        
-        if (gameSubset.length >= 5) {
-          const abandoned = gameSubset.filter(l => l.status === "ABANDONED").length;
-          const completed = gameSubset.filter(l => l.status === "COMPLETED");
-          const wins = completed.filter(l => (l.final_score ?? 0) >= 75).length;
+    for (const gameId of Object.keys(calculatedDifficulties)) {
+      const gameSubset = parsedLogs.filter(l => l.game_type_id === gameId);
 
-          const abandonRate = abandoned / gameSubset.length;
-          const winRate = completed.length > 0 ? wins / completed.length : 0;
+      let currentDifficulty = 1.0;
+      if (gameSubset.length > 0) {
+        const sortedLogs = [...gameSubset].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        currentDifficulty = sortedLogs[0].difficulty ?? 1.0;
+      }
 
-          // Rule 1: Text Games (Extract / Designs) Word Count Calibrator
-          if (gameId === "extract_facts" || gameId === "read_designs") {
-            if (abandonRate > 0.20) {
-              adjustments[gameId].max_word_count = Math.max(80, Math.floor(adjustments[gameId].max_word_count * 0.90));
-            } else if (winRate > 0.85) {
-              adjustments[gameId].max_word_count = Math.min(350, Math.floor(adjustments[gameId].max_word_count * 1.10));
-            }
-          }
-          // Rule 2: Sensory (Gaze / Air) Speed Calibrator
-          else if (["steady_gaze", "clear_air"].includes(gameId)) {
-            if (winRate > 0.85) {
-              adjustments[gameId].speed_multiplier = 1.05; // 5% Speed boost
-            } else if (winRate < 0.50) {
-              adjustments[gameId].speed_multiplier = 0.95; // 5% Speed reduction
-            }
-          }
-          // Rule 3: Logic (Gut Check) Anchor Statement Variance Calibrator
-          else if (gameId === "gut_check") {
-            if (winRate > 0.85) {
-              adjustments.gut_check.variance_multiplier = 1.10; // 10% wider variance limit
-            } else if (winRate < 0.40) {
-              adjustments.gut_check.variance_multiplier = 0.90; // 10% tighter variance limit
-            }
-          }
-          // Rule 4: Mental Reflex Layout Clutter Calibrator
-          else if (gameId === "mental_reflex") {
-            if (winRate < 0.30) {
-              adjustments.mental_reflex.distractor_count = Math.max(2, adjustments.mental_reflex.distractor_count - 1);
-            } else if (winRate > 0.80) {
-              adjustments.mental_reflex.distractor_count = Math.min(10, adjustments.mental_reflex.distractor_count + 1);
-            }
+      if (gameSubset.length >= 5) {
+        const abandoned = gameSubset.filter(l => l.status === "ABANDONED").length;
+        const completed = gameSubset.filter(l => l.status === "COMPLETED");
+        const wins = completed.filter(l => (l.final_score ?? 0) >= 75).length;
+
+        const abandonRate = abandoned / gameSubset.length;
+        const winRate = completed.length > 0 ? wins / completed.length : 0;
+
+        let adjustedDifficulty = currentDifficulty;
+
+        if (gameId === "EXTRACT_THE_FACTS" || gameId === "READ_BETWEEN_DESIGNS") {
+          if (abandonRate > 0.20 || winRate < 0.50) {
+            adjustedDifficulty = currentDifficulty * 0.90;
+          } else if (winRate > 0.85) {
+            adjustedDifficulty = currentDifficulty * 1.10;
           }
         }
-      });
-      executionTraces.push("[Pipeline Phase 1]: Telemetry rules evaluated. Parameters adjusted successfully.");
-    } else {
-      executionTraces.push("[Pipeline Phase 1]: Telemetry skipped. Insufficient historical lookup rows.");
+        else if (["STEADY_GAZE", "CLEAR_THE_AIR"].includes(gameId)) {
+          if (winRate > 0.85) {
+            adjustedDifficulty = currentDifficulty * 1.05;
+          } else if (winRate < 0.50) {
+            adjustedDifficulty = currentDifficulty * 0.95;
+          }
+        }
+        else if (gameId === "GUT_CHECK") {
+          if (winRate > 0.85) {
+            adjustedDifficulty = currentDifficulty * 1.10;
+          } else if (winRate < 0.40) {
+            adjustedDifficulty = currentDifficulty * 0.90;
+          }
+        }
+        else if (gameId === "MENTAL_REFLEX") {
+          if (winRate < 0.30) {
+            adjustedDifficulty = currentDifficulty * 0.90;
+          } else if (winRate > 0.80) {
+            adjustedDifficulty = currentDifficulty * 1.10;
+          }
+        }
+
+        calculatedDifficulties[gameId] = parseFloat(Math.max(0.5, Math.min(2.0, adjustedDifficulty)).toFixed(2));
+      } else {
+        calculatedDifficulties[gameId] = currentDifficulty;
+      }
     }
-  } catch (telemetryException: any) {
+    executionTraces.push("[Pipeline Phase 1]: Telemetry compiled. Difficulty factors calibrated statefully.");
+
+  } catch (telemetryException: unknown) {
+    const errorMsg = telemetryException instanceof Error ? telemetryException.message : String(telemetryException);
     return res.status(500).json({
       error: "Critical exception caught during Telemetry Refinement Phase",
-      context: telemetryException.message,
+      context: errorMsg,
     });
   }
 
@@ -282,95 +339,152 @@ export default async function handler(req: CustomRequest, res: CustomResponse) {
   // -----------------------------------------------------------------------
   try {
     for (const gameType of activeGameTypes) {
+      const targetDifficulty = calculatedDifficulties[gameType];
       let finalPayload: any = null;
 
-      if (gameType === "steady_gaze") {
-        const raw = generateSteadyGazeParams(tomorrowStr, adjustments.steady_gaze.speed_multiplier);
+      if (gameType === "STEADY_GAZE") {
+        const raw = generateSteadyGazeParams(tomorrowStr, targetDifficulty);
         finalPayload = SteadyGazeSchema.parse(raw);
       } 
-      else if (gameType === "clear_air") {
-        const raw = generateClearAirParams(tomorrowStr, adjustments.clear_air.speed_multiplier);
-        finalPayload = ClearAirSchema.parse(raw);
+      else if (gameType === "CLEAR_THE_AIR") {
+        const raw = generateClearTheAirParams(tomorrowStr, targetDifficulty);
+        finalPayload = ClearTheAirSchema.parse(raw);
       } 
-      else if (gameType === "extract_facts" || gameType === "gut_check" || gameType === "read_designs") {
+      else if (gameType === "EXTRACT_THE_FACTS" || gameType === "GUT_CHECK" || gameType === "READ_BETWEEN_DESIGNS") {
         let generationPrompt = "";
 
-        if (gameType === "gut_check") {
-          const customVariance = (20.0 * adjustments.gut_check.variance_multiplier).toFixed(1);
-          generationPrompt = `Return ONLY a raw JSON object for 'Gut Check'. Date: ${tomorrowStr}. Entropy: ${Math.random()}.\nEnsure your anchoring numerical statements use an expanded variance adjustment of ${customVariance} to optimize target challenge metrics.\nExpected JSON Structure:\n{\n  "industry_theme": "<Theme>",\n  "questions": [\n    { "anchor_statement": "<Statement>", "is_anchor_true": true, "the_real_question": "<Question>", "the_real_number": 100, "unit": "units", "difficulty_level": "Adaptive" }\n  ]\n}`;
+        if (gameType === "GUT_CHECK") {
+          const customVariance = (20.0 * targetDifficulty).toFixed(1);
+          generationPrompt = `
+            You are a system prompt engine for the 'generate_gut_check' module.
+            Return ONLY a raw JSON object for 'Gut Check'. Date: ${tomorrowStr}. Entropy: ${Math.random()}.
+            Ensure your anchoring numerical statements use an expanded variance adjustment of ${customVariance} to optimize target challenge metrics.
+
+            Expected JSON Structure:
+            {
+              "industry_theme": "<Theme>",
+              "questions": [
+                { 
+                  "anchor_statement": "<Statement>", 
+                  "is_anchor_true": true, 
+                  "the_real_question": "<Question>", 
+                  "the_real_number": 100, 
+                  "unit": "units", 
+                  "difficulty_level": "Adaptive" 
+                }
+              ]
+            }
+          `;
         } 
-        else if (gameType === "extract_facts") {
-          const wordLimit = adjustments.extract_facts.max_word_count;
-          generationPrompt = `Return ONLY a raw JSON object for 'Extract the Facts'. Date: ${tomorrowStr}. Entropy: ${Math.random()}.\nCRITICAL: paragraph_a and paragraph_b combined MUST STRICTLY adhere to a maximum reading limit of ${wordLimit} words based on recent user performance bounds.\nExpected JSON Structure:\n{\n  "topic": "<Topic>",\n  "paragraph_a": "<Text>",\n  "paragraph_b": "<Text>",\n  "mcq_questions": [\n    { "question": "<Question>", "options": ["A","B","C","D"], "correct_answer_index": 0 }\n  ]\n}`;
+        else if (gameType === "EXTRACT_THE_FACTS") {
+          const wordLimit = Math.max(80, Math.min(350, Math.floor(150 * targetDifficulty)));
+          generationPrompt = `
+            You are a system prompt engine for the 'generate_extract_facts' module.
+            Return ONLY a raw JSON object for 'Extract the Facts'. Date: ${tomorrowStr}. Entropy: ${Math.random()}.
+            
+            CRITICAL CONSTRAINTS:
+            - paragraph_a and paragraph_b combined MUST STRICTLY adhere to a maximum reading limit of ${wordLimit} words based on recent user performance bounds.
+            - Provide a 'takeaway_criteria' field consisting of 3 to 5 clear, objective, and neutral facts from the paragraphs. This list serves as the reference ground-truth for grading the player's takeaway depth later.
+
+            Expected JSON Structure:
+            {
+              "topic": "<Topic>",
+              "paragraph_a": "<Text>",
+              "paragraph_b": "<Text>",
+              "mcq_questions": [
+                { 
+                  "question": "<Question>", 
+                  "options": ["A","B","C","D"], 
+                  "correct_answer_index": 0 
+                }
+              ],
+              "takeaway_criteria": [
+                "neutral fact criteria 1",
+                "neutral fact criteria 2",
+                "neutral fact criteria 3"
+              ]
+            }
+          `;
         } 
         else {
-          const wordLimit = adjustments.read_designs.max_word_count;
-          generationPrompt = `Return ONLY a raw JSON object for 'Read the Designs'. Date: ${tomorrowStr}. Entropy: ${Math.random()}.\nCRITICAL: Ensure the copy block stays compact under an absolute cap of ${wordLimit} words. Include a tailored confirmation bias option trap tracking parameter inside the options matrix.\nExpected JSON Structure:\n{\n  "theme_title": "<Theme>",\n  "copy_block": "<Text>",\n  "mcq_questions": [\n    { "question": "<Question>", "options": ["A","B","C","D"], "correct_answer_index": 0, "is_confirmation_bias_trap": true }\n  ]\n}`;
+          const wordLimit = Math.max(100, Math.min(350, Math.floor(200 * targetDifficulty)));
+          generationPrompt = `
+            You are a system prompt engine for the 'generate_dark_designs' module.
+            Return ONLY a raw JSON object for 'Read Between the Designs'. Date: ${tomorrowStr}. Entropy: ${Math.random()}.
+            
+            CRITICAL CONSTRAINTS:
+            - Ensure the copy block stays compact under an absolute cap of ${wordLimit} words.
+            - Include a tailored confirmation bias option trap tracking parameter inside the options matrix.
+
+            Expected JSON Structure:
+            {
+              "theme_title": "<Theme>",
+              "copy_block": "<Text>",
+              "mcq_questions": [
+                { 
+                  "question": "<Question>", 
+                  "options": ["A","B","C","D"], 
+                  "correct_answer_index": 0, 
+                  "is_confirmation_bias_trap": true 
+                }
+              ]
+            }
+          `;
         }
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GOOGLE_GENERATIVE_AI_API_KEY}`;
-        const aiResponse = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: generationPrompt }] }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 1.0,
-            },
-          }),
+        const aiResponse = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: generationPrompt,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 1.0,
+          },
         });
 
-        if (!aiResponse.ok) {
-          throw new Error(`Downstream LLM channel service call failed with network response status code: ${aiResponse.status}`);
-        }
-
-        const aiData = await aiResponse.json();
-        let rawText = aiData.candidates?.[0]?.content?.parts?.[0]?.text;
+        const rawText = aiResponse.text?.trim();
         if (!rawText) throw new Error(`Empty execution profile tokens generated via LLM channel for module type target ${gameType}`);
 
-        rawText = rawText.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
         const parsed = JSON.parse(rawText);
         
-        if (gameType === "gut_check") finalPayload = GutCheckSchema.parse(parsed);
-        else if (gameType === "extract_facts") finalPayload = ExtractFactsSchema.parse(parsed);
+        if (gameType === "GUT_CHECK") finalPayload = GutCheckSchema.parse(parsed);
+        else if (gameType === "EXTRACT_THE_FACTS") finalPayload = ExtractFactsSchema.parse(parsed);
+        else if (gameType === "READ_BETWEEN_DESIGNS") finalPayload = ReadBetweenDesignsSchema.parse(parsed);
         else finalPayload = parsed; 
       } 
       else {
-        // Fallback for 'mental_reflex'
+        const calculatedDistractors = Math.max(2, Math.min(10, Math.floor(5 * targetDifficulty)));
         finalPayload = {
           theme_title: `Automatic Generation Run ${gameType} for Tomorrow`,
           scheduled_timestamp: Date.now(),
-          distractor_shapes_count: adjustments.mental_reflex.distractor_count
+          distractor_shapes_count: calculatedDistractors
         };
       }
 
-      // Delete pre-existing scenarios mapping matching tomorrow's signature
       await supabase
         .from("daily_scenarios")
         .delete()
         .eq("play_date", tomorrowStr)
         .eq("game_type_id", gameType);
 
-      // Commit the validated JSON payload straight to Supabase
       const { error: insertError } = await supabase
         .from("daily_scenarios")
         .insert({
           play_date: tomorrowStr,
           game_type_id: gameType,
-          difficulty_band: 1.0,
+          difficulty_band: targetDifficulty,
           scenario_data: finalPayload,
         });
 
       if (insertError) throw insertError;
-      executionTraces.push(`[Pipeline Phase 2]: Seeded dynamically adjusted daily scenario for [${gameType}]`);
+      executionTraces.push(`[Pipeline Phase 2]: Seeded dynamically adjusted daily scenario for [${gameType}] at difficulty [${targetDifficulty}]`);
     }
 
     return res.status(200).json({ status: "Success", processed_date: tomorrowStr, traces: executionTraces });
-  } catch (contentSeedingException: any) {
+  } catch (contentSeedingException: unknown) {
+    const errorMsg = contentSeedingException instanceof Error ? contentSeedingException.message : String(contentSeedingException);
     return res.status(500).json({
       error: "Critical exception caught during Content Generation & Seeding Phase",
-      diagnostic_context: contentSeedingException.message,
+      diagnostic_context: errorMsg,
     });
   }
 }
