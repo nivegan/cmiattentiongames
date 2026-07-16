@@ -6,6 +6,7 @@
 // "X is not defined". Imported types, by contrast, erase cleanly in annotations.
 
 import type { GameMode } from "@/utils/gameMode";
+import type { WeeklySummaryPayload } from "@/utils/weeklySummaryTypes";
 
 // A single game played on a given day — just enough to render its pill.
 interface DayGame {
@@ -29,4 +30,13 @@ interface HistoryResult {
   hasEntries: boolean; // false when the user has no plays yet (empty state)
 }
 
-export type { DayGame, DayGroup, HistoryResult };
+// One weekly review card in the History page's Weekly tab (US 4.3). Mirrors a
+// weekly_summaries row; the payload is the same JSON the review modal renders.
+interface WeeklySummaryEntry {
+  weekStartKey: string; // IST "YYYY-MM-DD" Sunday — also the React key
+  weekEndKey: string; // IST "YYYY-MM-DD" Saturday
+  dismissed: boolean; // whether the celebratory modal was dismissed
+  payload: WeeklySummaryPayload;
+}
+
+export type { DayGame, DayGroup, HistoryResult, WeeklySummaryEntry };

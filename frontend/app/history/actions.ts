@@ -11,7 +11,13 @@ import { toISTDateKey } from "@/utils/toISTDateKey";
 import scheduleData from "@/data/dailySchedule.json";
 // Types live in ./types (not here) because a "use server" file must export only
 // async server actions — see the note in types.ts.
-import type { DayGame, DayGroup, HistoryResult } from "./types";
+import type {
+  DayGame,
+  DayGroup,
+  HistoryResult,
+  WeeklySummaryEntry,
+} from "./types";
+import type { WeeklySummaryPayload } from "@/utils/weeklySummaryTypes";
 
 // Weekday → scheduled game slugs (same source the home grid reads). Only the
 // *count* per weekday matters here — it's the denominator for a day's "X/N".
@@ -128,4 +134,38 @@ const fetchHistory = async (deviceId: string): Promise<HistoryResult> => {
   };
 };
 
-export { fetchHistory };
+// Fetches all of this user's weekly review summaries, newest week first, for
+// the History page's Weekly tab (US 4.3). All rows are returned — including a
+// not-yet-dismissed current one — so there's never a gap in the feed.
+const fetchWeeklySummaries = async (
+  deviceId: string,
+): Promise<WeeklySummaryEntry[]> => {
+  const { userId } = await auth();
+  const identifier = userId || deviceId;
+  if (!identifier) return [];
+
+  const dbUuid = safeFormatToUuid(identifier);
+  const rows = await prisma.weekly_summaries.findMany({
+    where: { user_id: dbUuid },
+    orderBy: { week_start_date: "desc" },
+  });
+
+  return rows.map((r) => {
+    // week_start_date is a @db.Date — Prisma reads it back as UTC midnight, so
+    // slicing the ISO string recovers the stored calendar date exactly.
+    const weekStartKey = r.week_start_date.toISOString().slice(0, 10);
+    const weekEndKey = new Date(
+      r.week_start_date.getTime() + 6 * 86_400_000, // Saturday = Sunday + 6 days
+    )
+      .toISOString()
+      .slice(0, 10);
+    return {
+      weekStartKey,
+      weekEndKey,
+      dismissed: r.dismissed_at !== null,
+      payload: r.payload as unknown as WeeklySummaryPayload,
+    };
+  });
+};
+
+export { fetchHistory, fetchWeeklySummaries };

@@ -15,13 +15,20 @@ import { User, LogIn, Settings, Info, MessageSquare } from "lucide-react";
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import { clerkAppearance } from "@/lib/clerkAppearance";
 import { Toaster } from "sonner";
+import posthog from "posthog-js";
 import { useDeviceId } from "@/hooks/useDeviceId";
-import { fetchPlayedToday } from "@/app/home-actions";
+import {
+  fetchPlayedToday,
+  fetchWeeklyReview,
+  dismissWeeklyReview,
+} from "@/app/home-actions";
 import { GAME_CATALOG, TIERS } from "@/lib/gameCatalog";
 import type { GameInfo } from "@/lib/gameCatalog";
 import type { GameMode } from "@/utils/gameMode";
+import type { WeeklyReviewResult } from "@/utils/weeklySummaryTypes";
 import { AboutKalariModal } from "@/components/AboutKalariModal";
 import { SendFeedbackModal } from "@/components/SendFeedbackModal";
+import { WeeklyReviewModal } from "@/components/WeeklyReviewModal";
 import scheduleData from "@/data/dailySchedule.json";
 
 const schedule = scheduleData.schedule as Record<string, string[]>;
@@ -78,6 +85,10 @@ const HomeGrid = () => {
   const [played, setPlayed] = useState<GameMode[]>([]);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [weeklyReview, setWeeklyReview] = useState<WeeklyReviewResult | null>(
+    null,
+  );
+  const [weeklyOpen, setWeeklyOpen] = useState(false);
 
   useEffect(() => {
     // Server action (auth() resolves identity server-side); update on resolve.
@@ -85,7 +96,32 @@ const HomeGrid = () => {
     fetchPlayedToday(deviceIdRef.current)
       .then(setPlayed)
       .catch(() => {});
+
+    // Weekly review popup (US 4.3): the server decides (signed-in? summary
+    // exists? not yet dismissed?) — the client just opens what it's given.
+    fetchWeeklyReview()
+      .then((res) => {
+        if (res.show && res.payload) {
+          setWeeklyReview(res);
+          setWeeklyOpen(true);
+          posthog.capture("weekly_review_shown", {
+            week_start: res.weekStartKey,
+          });
+        }
+      })
+      .catch(() => {});
   }, [deviceIdRef]);
+
+  // Any dismissal (X, backdrop, CTA) is permanent for that week. Optimistic:
+  // close immediately, persist fire-and-forget (same spirit as logFunnelEvent).
+  const handleWeeklyClose = () => {
+    setWeeklyOpen(false);
+    if (!weeklyReview?.weekStartKey) return;
+    void dismissWeeklyReview(weeklyReview.weekStartKey);
+    posthog.capture("weekly_review_dismissed", {
+      week_start: weeklyReview.weekStartKey,
+    });
+  };
 
   const weekday = istParts({ weekday: "long" }).toLowerCase();
   const dateStr = istParts({
@@ -256,6 +292,17 @@ const HomeGrid = () => {
         open={feedbackOpen}
         onClose={() => setFeedbackOpen(false)}
       />
+      {weeklyReview?.payload &&
+        weeklyReview.weekStartKey &&
+        weeklyReview.weekEndKey && (
+          <WeeklyReviewModal
+            open={weeklyOpen}
+            onClose={handleWeeklyClose}
+            weekStartKey={weeklyReview.weekStartKey}
+            weekEndKey={weeklyReview.weekEndKey}
+            payload={weeklyReview.payload}
+          />
+        )}
       <Toaster richColors />
     </div>
   );

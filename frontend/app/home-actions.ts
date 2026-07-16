@@ -15,7 +15,13 @@ import { auth } from "@clerk/nextjs/server";
 import { safeFormatToUuid } from "@/utils/safeFormatToUuid";
 import { prisma } from "@/utils/prismaInit";
 import { getCurrentDayRange } from "@/utils/getCurrentDayRange";
+import { getCompletedWeekRange } from "@/utils/weekRange";
+import { computeAndUpsertSummaryForUser } from "@/utils/weeklySummary";
 import type { GameMode } from "@/utils/gameMode";
+import type {
+  WeeklyReviewResult,
+  WeeklySummaryPayload,
+} from "@/utils/weeklySummaryTypes";
 
 // Returns true if this user/device has already completed onboarding.
 // Fails open (returns false → show onboarding) so a transient DB error never
@@ -90,4 +96,74 @@ const fetchPlayedToday = async (deviceId: string): Promise<GameMode[]> => {
   }
 };
 
-export { hasCompletedOnboarding, completeOnboarding, fetchPlayedToday };
+// Weekly review (US 4.3): should the celebratory modal open for this visit?
+// Signed-in users only. Returns the most recently completed IST week's summary
+// unless it has already been dismissed. If the Sunday cron hasn't produced the
+// row yet, computes it lazily so the modal is never empty.
+// Fails closed ({ show: false }) so a DB error never blocks the home page.
+// (No deviceId parameter — unlike the other actions here, this feature is
+// signed-in only, so identity comes solely from the Clerk session.)
+const fetchWeeklyReview = async (): Promise<WeeklyReviewResult> => {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { show: false }; // guests never see the modal
+
+    const dbUuid = safeFormatToUuid(userId);
+    const range = getCompletedWeekRange();
+
+    const row = await prisma.weekly_summaries.findUnique({
+      where: {
+        user_id_week_start_date: {
+          user_id: dbUuid,
+          week_start_date: range.weekStartDate,
+        },
+      },
+    });
+    if (row?.dismissed_at) return { show: false };
+
+    const payload = row
+      ? (row.payload as unknown as WeeklySummaryPayload)
+      : await computeAndUpsertSummaryForUser(dbUuid, range); // lazy fallback
+    if (!payload) return { show: false }; // brand-new user — nothing to review
+
+    return {
+      show: true,
+      weekStartKey: range.weekStartKey,
+      weekEndKey: range.weekEndKey,
+      payload,
+    };
+  } catch (error) {
+    console.error("Error fetching weekly review:", error);
+    return { show: false };
+  }
+};
+
+// Permanently dismisses a week's review modal for the signed-in user.
+// updateMany keeps it idempotent (two tabs dismissing is a harmless no-op).
+const dismissWeeklyReview = async (
+  weekStartKey: string, // IST "YYYY-MM-DD" Sunday, from fetchWeeklyReview
+): Promise<void> => {
+  try {
+    const { userId } = await auth();
+    if (!userId) return;
+
+    const dbUuid = safeFormatToUuid(userId);
+    await prisma.weekly_summaries.updateMany({
+      where: {
+        user_id: dbUuid,
+        week_start_date: new Date(`${weekStartKey}T00:00:00Z`),
+      },
+      data: { dismissed_at: new Date() },
+    });
+  } catch (error) {
+    console.error("Error dismissing weekly review:", error);
+  }
+};
+
+export {
+  hasCompletedOnboarding,
+  completeOnboarding,
+  fetchPlayedToday,
+  fetchWeeklyReview,
+  dismissWeeklyReview,
+};

@@ -10,7 +10,7 @@ dotenv.config();
 const { GOOGLE_GENERATIVE_AI_API_KEY } = process.env;
 
 if (!GOOGLE_GENERATIVE_AI_API_KEY) {
-  throw new Error("Missing required environment variables in .env.local");
+  throw new Error("Missing required environment variables in .env");
 }
 
 // ==========================================

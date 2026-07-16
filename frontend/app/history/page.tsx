@@ -22,10 +22,11 @@ import { useAuth, SignInButton } from "@clerk/nextjs";
 import { clerkAppearance } from "@/lib/clerkAppearance";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Calendar, CheckCircle2, ArrowLeft } from "lucide-react";
-import { fetchHistory } from "./actions";
-import type { HistoryResult } from "./types";
+import { Calendar, CheckCircle2, ArrowLeft, Trophy } from "lucide-react";
+import { fetchHistory, fetchWeeklySummaries } from "./actions";
+import type { HistoryResult, WeeklySummaryEntry } from "./types";
 import type { GameMode } from "@/utils/gameMode";
+import { formatWeekLabel } from "@/lib/formatWeekLabel";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 
@@ -56,6 +57,8 @@ const HistoryPage = () => {
   const { isSignedIn, isLoaded } = useAuth();
 
   const [data, setData] = useState<HistoryResult | null>(null);
+  const [weeks, setWeeks] = useState<WeeklySummaryEntry[]>([]);
+  const [view, setView] = useState<"daily" | "weekly">("daily");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
@@ -72,8 +75,12 @@ const HistoryPage = () => {
       try {
         const deviceId =
           localStorage.getItem("meta_mind_global_device_id") ?? "";
-        const result = await fetchHistory(deviceId);
+        const [result, weekly] = await Promise.all([
+          fetchHistory(deviceId),
+          fetchWeeklySummaries(deviceId),
+        ]);
         setData(result);
+        setWeeks(weekly);
       } catch {
         setLoadError(true);
       } finally {
@@ -157,7 +164,116 @@ const HistoryPage = () => {
           </div>
         </div>
 
-        {hasEntries ? (
+        {/* Daily / Weekly segmented toggle (US 4.3) */}
+        <div className="flex rounded-full bg-stone-200/60 p-1 w-fit">
+          {(["daily", "weekly"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              className={`rounded-full px-5 py-1.5 text-sm font-medium capitalize transition-colors cursor-pointer ${
+                view === v
+                  ? "bg-[#8B2626] text-white"
+                  : "text-stone-500 hover:text-stone-700"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+
+        {view === "weekly" ? (
+          weeks.length > 0 ? (
+            <>
+              {weeks.map((week) => {
+                const bestMode = week.payload.best_game.game_type_id;
+                return (
+                  <div
+                    key={week.weekStartKey}
+                    className="rounded-2xl border border-stone-200 bg-[#FBF8F2] px-5 py-4 space-y-3"
+                  >
+                    {/* Week span title */}
+                    <div className="flex items-center gap-2">
+                      <Calendar className="size-5 text-stone-400" />
+                      <span className="font-serif font-bold text-lg text-[#232323]">
+                        Week {formatWeekLabel(week.weekStartKey, week.weekEndKey)}
+                      </span>
+                    </div>
+
+                    {/* Witty weekly summary line */}
+                    <p className="text-sm text-stone-600 italic">
+                      {week.payload.summary_copy}
+                    </p>
+
+                    {/* Per-game play ratios */}
+                    <div className="flex flex-wrap gap-2">
+                      {week.payload.total_games_played
+                        .split(", ")
+                        .filter((row) => row.length > 0)
+                        .map((row) => (
+                          <span
+                            key={row}
+                            className="rounded-full bg-[#F0E3E3] px-3 py-1 text-sm font-medium text-[#8B2626]"
+                          >
+                            {row}
+                          </span>
+                        ))}
+                    </div>
+
+                    {/* Best game of the week */}
+                    {bestMode && (
+                      <div className="flex items-center gap-2 text-sm text-[#232323]">
+                        <Trophy className="size-4 text-[#8B2626]" />
+                        <span>
+                          Best game:{" "}
+                          <span className="font-medium text-[#8B2626]">
+                            {GAME_LABELS[bestMode] ?? bestMode}
+                          </span>{" "}
+                          — {week.payload.best_game.highest_score} pts
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Avg time — hidden while reaction_time_ms isn't tracked */}
+                    {week.payload.average_completion_time !== "0.0s" && (
+                      <p className="text-sm text-stone-500">
+                        Avg completion time:{" "}
+                        {week.payload.average_completion_time}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Same lifetime footer as the daily view */}
+              <div className="rounded-2xl bg-[#F3EDE3] px-6 py-8">
+                <h2 className="font-serif font-bold text-2xl text-[#232323] mb-6">
+                  Your Progress
+                </h2>
+                <div className="text-center">
+                  <p className="font-serif font-bold text-4xl text-[#8B2626]">
+                    {gamesCompleted}
+                  </p>
+                  <p className="text-stone-500 text-sm mt-1">Games Completed</p>
+                </div>
+              </div>
+            </>
+          ) : (
+            // Weekly empty state
+            <div className="text-center py-16 space-y-6">
+              <p className="text-stone-500">
+                No weekly summaries yet — your first review appears after a
+                full week.
+              </p>
+              <Button
+                asChild
+                className="rounded-full bg-[#8B2626] text-white px-6 hover:bg-[#732020]"
+              >
+                <Link href="/">Play a Game</Link>
+              </Button>
+            </div>
+          )
+        ) : hasEntries ? (
           <>
             {days.map((day) => {
               const complete =
