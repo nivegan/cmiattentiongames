@@ -1,99 +1,119 @@
-import type { NextApiRequest, NextApiResponse } from "next";
-import dotenv from "dotenv";
+import { IncomingMessage, ServerResponse } from "http";
+import { createClient } from "@supabase/supabase-js";
 import { GoogleGenAI } from "@google/genai";
+import dotenv from "dotenv";
 
-// Consistent environment setup matching your project layout
+// Load environment variables matching your stack profile
 dotenv.config({ path: ".env.local" });
-const { GOOGLE_GENERATIVE_AI_API_KEY } = process.env;
+const { SUPABASE_URL, SUPABASE_KEY, GOOGLE_GENERATIVE_AI_API_KEY } = process.env;
 
-// Initialize client exactly using your configuration style
-const ai = new GoogleGenAI({ apiKey: GOOGLE_GENERATIVE_AI_API_KEY });
-
-// Define interfaces for type safety on incoming and outgoing payloads
-interface ScoringRequestBody {
-  scenarioId?: string;
-  correctAnswers: Record<string, any> | string;
-  userAnswers: string;
+if (!SUPABASE_URL || !SUPABASE_KEY || !GOOGLE_GENERATIVE_AI_API_KEY) {
+  throw new Error("Missing required environment variables (SUPABASE_URL, SUPABASE_KEY, or GOOGLE_GENERATIVE_AI_API_KEY).");
 }
 
-interface ScoringSuccessResponse {
-  takeawayDepthScore: number;
-  explanation: string;
+// 1. FIXED: Added non-null assertion (!) to guarantee defined string types to the SDK clients
+const supabase = createClient(SUPABASE_URL!, SUPABASE_KEY!);
+const ai = new GoogleGenAI({ apiKey: GOOGLE_GENERATIVE_AI_API_KEY! });
+
+// =========================================================================
+// 2. FIXED: Declared lightweight request/response types to avoid implicit 'any'
+// =========================================================================
+interface CustomRequest extends IncomingMessage {
+  body?: any;
+  method?: string;
 }
 
-interface ScoringErrorResponse {
-  error: string;
-  message?: string;
+interface CustomResponse extends ServerResponse {
+  status: (statusCode: number) => CustomResponse;
+  json: (body: any) => void;
 }
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse<ScoringSuccessResponse | ScoringErrorResponse>
-) {
+export default async function handler(req: CustomRequest, res: CustomResponse) {
   // Ensure the endpoint only handles incoming POST data
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
   try {
-    // Cast the request body to our expected type structure
-    const { scenarioId, correctAnswers, userAnswers } = req.body as ScoringRequestBody;
+    const { scenarioId, takeaway, selectedFacts } = req.body || {};
 
     // Structural validation guardrail
-    if (!correctAnswers || !userAnswers) {
-      return res.status(400).json({ error: "Missing required fields: correctAnswers and userAnswers are required." });
+    if (!scenarioId || !takeaway || !selectedFacts) {
+      return res.status(400).json({ 
+        error: "Missing required fields: scenarioId, takeaway, and selectedFacts are all required." 
+      });
     }
 
-    // Construct the grading prompt
+    // 1. Fetch ground-truth scenario content directly from kalari_games table
+    const { data: gameRow, error: dbError } = await supabase
+      .from("kalari_games")
+      .select("content")
+      .eq("game_type_id", "EXTRACT_THE_FACTS")
+      .eq("id", scenarioId)
+      .single();
+
+    if (dbError || !gameRow) {
+      return res.status(404).json({ 
+        error: "Target scenario content not found in kalari_games table.", 
+        details: dbError?.message 
+      });
+    }
+
+    const groundTruthContent = gameRow.content;
+
+    // 2. Construct the grading prompt matching your exact scoring rubric
     const prompt = `
-       You are an objective grading script designed to evaluate the depth of a user's takeaway from a given scenario. Your task is to cross-reference the user's remembered narrative paragraph against the ground-truth factual schema and judge how accurately the user retained the facts.
-      
-      Task: Cross-reference the user's remembered narrative paragraph against the ground-truth factual schema. Judge how accurately the user retained the facts.
-      
-      Scenario ID: ${scenarioId || "Default"}
-      Target Reference Answers (Ground Truth): ${JSON.stringify(correctAnswers)}
-      Player's Provided Response: "${userAnswers}"
-      
-      Analyze the player's response against the target reference answers. 
-      Calculate a 'takeawayDepthScore' from 0 to 100 based on how accurately and deeply they captured the core facts.
-      Provide a brief, clear explanation for the score assigned.
-      
-      Return your final response strictly as a JSON object with this exact structure:
+      You are an objective grading script designed to evaluate a player's performance in the 'Extract the Facts' game mode.
+      Your task is to mathematically score their submission against the ground-truth content schema.
+
+      ---
+      INPUT CHANNELS:
+      - Ground-Truth Content: ${JSON.stringify(groundTruthContent)}
+      - Player's Selected Facts (Array of Strings): ${JSON.stringify(selectedFacts)}
+      - Player's Written Takeaway: "${takeaway}"
+
+      ---
+      SCORING MATRIX RULES (Max Possible: 100 | Min Possible: 0):
+      1. Neutral Facts Accuracy (Up to 45 Points): Evaluate how accurately the player's selected facts match the neutral ground-truth facts.
+      2. Substantive Takeaway Depth (Up to 55 Points): Evaluate the analytical depth and objective comprehensiveness of the written takeaway.
+      3. Strict Emotional Modifier Penalty: Achieving a perfect 100 requires absolute objectivity with zero emotional or biased modifiers. 
+         - Scan both the selected facts and the takeaway text for loaded adjectives or adverbs (e.g., 'disastrous', 'wonderful', 'alarming', 'manipulative').
+         - Deduct exactly 10 points for every single loaded/biased word identified.
+
+      ---
+      OUTPUT REGULATION:
+      Return your response strictly as a JSON object matching this exact structure:
       {
-        "takeawayDepthScore": <number between 0 and 100>
-        
+        "takeawayDepthScore": <calculated integer between 0 and 100>
       }
     `;
 
-    // Generate content using the exact SDK-supported model string
+    // 3. Generate content using the exact SDK-supported model string
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
-        // Force the model to output a verified, machine-readable JSON format
         responseMimeType: "application/json",
-        // Force deterministic, predictable output across multiple evaluations
-        temperature: 0.0,
+        temperature: 0.0, // Hard determinism for standardized scoring
         seed: 42
       },
     });
 
-    // Ensure we safely have text contents back from the SDK
-    if (!response.text) {
-      throw new Error("No evaluation text returned from the Gemini engine.");
+    // 4. FIXED: Narrow textResponse type and throw explicit error if it's undefined
+    const textResponse = response.text;
+    if (!textResponse) {
+      throw new Error("AI Engine returned an undefined or empty response body.");
     }
 
-    // Parse the validated JSON payload out of the model's text response
-    const evaluationResult = JSON.parse(response.text) as ScoringSuccessResponse;
+    const evaluationResult = JSON.parse(textResponse.trim());
 
-    // Return the typed evaluation metrics back to the client
+    // 5. Return the exact designated structure back to the client
     return res.status(200).json(evaluationResult);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    // 5. FIXED: Guard and cast the 'unknown' error parameter cleanly
     console.error("Error in scoring engine:", error);
-    return res.status(500).json({ 
-      error: "Internal Server Error", 
-      message: error instanceof Error ? error.message : String(error) 
-    });
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    return res.status(500).json({ error: "Internal Server Error", message: errorMsg });
   }
 }
