@@ -19,10 +19,17 @@ const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 // Dynamically resolves the path relative to the runtime execution context
 const RESOLVED_OUTPUT_PATH = path.join(process.cwd(), 'dark_design.json');
 
-// Reusable schema helper to enforce the strict 150-character limit
-const LimitedString = z.string().max(150, "Content exceeds the strict 150-character limit");
-// Strictly capped at 200 characters to ensure concise explanation delivery
-const ExplanationString = z.string().max(200, "Explanation exceeds the strict 200-character limit");
+// Reusable schema helper with dynamic preprocessing to prevent unexpected LLM length crashes
+const LimitedString = z.preprocess(
+  (val) => (typeof val === "string" ? val.substring(0, 150) : val),
+  z.string().max(150, "Content exceeds the strict 150-character limit")
+);
+
+// Strictly capped at 200 characters with programmatic truncation fallback to guarantee pipeline safety
+const ExplanationString = z.preprocess(
+  (val) => (typeof val === "string" ? val.substring(0, 200) : val),
+  z.string().max(200, "Explanation exceeds the strict 200-character limit")
+);
 
 // ==========================================
 // 1. DYNAMIC VALIDATION SCHEMA & TYPES
@@ -68,6 +75,7 @@ interface GeminiResponse {
 interface YargsArgs {
   forceRefresh?: boolean | string;
   force?: boolean;
+  difficulty?: number | string;
   mode?: string;
   _?: Array<string | number>;
 }
@@ -79,8 +87,18 @@ interface KalariGameRow {
 // ==========================================
 // 2. EXCLUSIVE DARK DESIGN RUNTIME
 // ==========================================
-export async function generate(customMode: string | null = null, forceRefresh = false): Promise<DarkDesignData> {
+export async function generate(
+  customMode: string | null = null, 
+  forceRefresh = false,
+  defaultDifficulty = 1
+): Promise<DarkDesignData> {
   const mode = "dark_design";
+
+  const rawArgv = yargs(hideBin(process.argv)).parseSync() as unknown as YargsArgs;
+  const shouldForce = forceRefresh || rawArgv.forceRefresh === true || rawArgv.forceRefresh === 'true' || rawArgv.force === true;
+  
+  // Extract custom difficulty parameters (Bounds: 1 - 5)
+  const targetDifficulty = rawArgv.difficulty ? parseInt(rawArgv.difficulty as string, 10) : defaultDifficulty;
 
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60000;
@@ -99,7 +117,7 @@ export async function generate(customMode: string | null = null, forceRefresh = 
 
   try {
     // NATURAL 24-HOUR DAILY LOCK CHECK
-    if (!forceRefresh) {
+    if (!shouldForce) {
       const { data: existingRows } = await supabase
         .from("kalari_games")
         .select("content")
@@ -150,6 +168,7 @@ export async function generate(customMode: string | null = null, forceRefresh = 
     const prompt = `Return ONLY a raw JSON object for 'Dark Design'.
 Date: ${today}.
 Dynamic Entropy Value: ${Date.now()}-${Math.random()}.
+Target Difficulty Tier: ${targetDifficulty} out of 5 (1 = Simple and obvious design patterns; 5 = Highly subtle, legalistic gray-area traps with deceptive micro-copy).
 
 ANTI-REPETITION FILTER (MEMORY LOOP):
 Avoid themes matching or closely relating to these recent topics:
@@ -157,7 +176,7 @@ Avoid themes matching or closely relating to these recent topics:
 
 CRITICAL CHARACTER & LANGUAGE CONSTRAINTS:
 1. Questions and individual options (text, ui, ad, graph, a, b, c, d) MUST be under a strict maximum length of 150 characters.
-2. The 'short_explanation' string MUST be under a strict maximum length of 200 characters. 
+2. The 'short_explanation' string MUST be under an absolute target limit of 170 characters to ensure safe compliance bounds.
 3. Use clear, plain, everyday language. Avoid complex, academic, or niche industry buzzwords.
 
 CORE GAME MECHANICAL RULES:
@@ -175,7 +194,7 @@ CORE GAME MECHANICAL RULES:
    - Set 'correct_vector' to the alphabetical key letter holding the true trick, and 'correct_vector_index' to its corresponding 0-based index position.
 
 3. 'short_explanation' structural requirement:
-   - Provide a single, plain text string under 200 characters.
+   - Provide a single, plain text string under 170 characters.
    - COMPOSITION RULE: You must tightly combine two elements into this single string. First, clearly state WHAT the technique means (definition). Second, explain WHY it fits this option over the other grey-area choices.
 
 Do not wrap the JSON output in markdown backticks or code blocks.
@@ -233,7 +252,6 @@ Expected JSON Structure:
     // ==========================================
     // 3. TRANSACTION OVERWRITE SNAPSHOT LAYER
     // ==========================================
-    // FIX: Match exact 24-hour block for deletes to prevent layout mismatches
     await supabase
       .from("kalari_games")
       .delete()
@@ -245,6 +263,7 @@ Expected JSON Structure:
       mode,
       topic: "Daily Dark Design Challenge", 
       content: orderedPayload,
+      difficulty_band: targetDifficulty, // Persists difficulty tier parameters securely
       scheduled_for: today,
     });
 
@@ -255,7 +274,6 @@ Expected JSON Structure:
     return validated;
   } catch (err) {
     if (err instanceof z.ZodError) {
-      // FIX: Property 'errors' changed to 'issues' for proper Zod Typings
       process.stderr.write(JSON.stringify(err.issues, null, 2));
     } else if (err instanceof Error) {
       process.stderr.write(err.message);
@@ -279,11 +297,11 @@ if (currentScript) {
     baseName === "generate_dark_designs.ts";
 
   if (matchesName) {
-    // FIX: Replaced .argv with .parseSync() to compile smoothly in TypeScript ESM environments
     const rawArgv = yargs(hideBin(process.argv)).parseSync() as unknown as YargsArgs;
     const force = rawArgv.forceRefresh === true || rawArgv.forceRefresh === 'true' || rawArgv.force === true;
+    const targetDifficulty = rawArgv.difficulty ? parseInt(rawArgv.difficulty as string, 10) : 1;
     const targetMode = rawArgv.mode || (rawArgv._ && typeof rawArgv._[0] === 'string' ? rawArgv._[0] : null);
 
-    generate(targetMode, force); 
+    generate(targetMode, force, targetDifficulty); 
   }
 }
