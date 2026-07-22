@@ -7,7 +7,7 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
 const geminiApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
 if (!supabaseUrl || !supabaseKey || !geminiApiKey) {
@@ -183,10 +183,17 @@ function clampBand(band: number): number {
 export default async function handler(req: CustomRequest, res: CustomResponse) {
   if (req.method !== "POST" && req.method !== "GET") return res.status(405).json({ error: "Method Not Allowed" });
 
-  const tomorrowDateObj = new Date();
-  tomorrowDateObj.setDate(tomorrowDateObj.getDate() + 1);
-  const tomorrowStr = tomorrowDateObj.toISOString().split("T")[0];
-  const dayName = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][tomorrowDateObj.getDay()];
+  const executionTraces: string[] = [];
+
+  // Target current date (e.g., "2026-07-22") or custom query override
+  const targetDateStr = (req.query?.date && typeof req.query.date === "string")
+    ? req.query.date
+    : new Date().toISOString().split("T")[0];
+
+  const forceRegenerate = req.query?.force === "true" || req.query?.forceRefresh === "true";
+
+  const targetDateObj = new Date(targetDateStr + "T00:00:00Z");
+  const dayName = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][targetDateObj.getUTCDay()];
 
   const scheduleMap: Record<string, string[]> = {
     monday: ["EXTRACT_THE_FACTS", "MENTAL_REFLEX"],
@@ -199,13 +206,35 @@ export default async function handler(req: CustomRequest, res: CustomResponse) {
   };
 
   const activeGameTypes = scheduleMap[dayName] || ["EXTRACT_THE_FACTS", "MENTAL_REFLEX"];
-  const executionTraces: string[] = [];
-  const targetDifficultyBands: Record<string, number> = { STEADY_GAZE: 3, CLEAR_THE_AIR: 3, EXTRACT_THE_FACTS: 3, GUT_CHECK: 3, DARK_DESIGN: 3, MENTAL_REFLEX: 3 };
 
   // -----------------------------------------------------------------------
-  // STEP 1 & 2: TELEMETRY REFINEMENT LOOP
+  // SELF-HEALING CHECK: VERIFY IF TODAY'S GAMES ALREADY EXIST
   // -----------------------------------------------------------------------
   try {
+    const { data: existingRows } = await supabase
+      .from("daily_scenarios")
+      .select("game_type_id")
+      .eq("play_date", targetDateStr);
+
+    const existingGameIds = new Set(existingRows?.map(r => r.game_type_id) || []);
+    const missingGames = activeGameTypes.filter(gameId => forceRegenerate || !existingGameIds.has(gameId));
+
+    if (missingGames.length === 0) {
+      return res.status(200).json({
+        status: "Success",
+        message: `Games for ${targetDateStr} already exist in daily_scenarios. No generation required.`,
+        play_date: targetDateStr,
+        active_games: Array.from(existingGameIds)
+      });
+    }
+
+    executionTraces.push(`[Check]: Missing games detected for ${targetDateStr}: [${missingGames.join(", ")}]. Proceeding with generation...`);
+
+    // -----------------------------------------------------------------------
+    // STEP 1 & 2: TELEMETRY REFINEMENT LOOP
+    // -----------------------------------------------------------------------
+    const targetDifficultyBands: Record<string, number> = { STEADY_GAZE: 3, CLEAR_THE_AIR: 3, EXTRACT_THE_FACTS: 3, GUT_CHECK: 3, DARK_DESIGN: 3, MENTAL_REFLEX: 3 };
+
     const { data: kalariData } = await supabase.from("kalari_games").select("mode, difficulty_band");
     if (kalariData) kalariData.forEach(row => { if (targetDifficultyBands[row.mode.toUpperCase()] && row.difficulty_band) targetDifficultyBands[row.mode.toUpperCase()] = clampBand(row.difficulty_band); });
 
@@ -225,8 +254,8 @@ export default async function handler(req: CustomRequest, res: CustomResponse) {
         let newBand = currentBand;
 
         if (gameId === "EXTRACT_THE_FACTS" || gameId === "DARK_DESIGN") {
-          if (abandonRate > 0.20 || winRate < 0.50 || isLowScore) newBand -= 1; // Drives 10% Char limit reduction downstream
-          else if (winRate > 0.80) newBand += 1;                                // Drives 10% Char limit increase downstream
+          if (abandonRate > 0.20 || winRate < 0.50 || isLowScore) newBand -= 1;
+          else if (winRate > 0.80) newBand += 1;
         } else if (gameId === "STEADY_GAZE" || gameId === "CLEAR_THE_AIR" || gameId === "GUT_CHECK") {
           if (winRate > 0.85) newBand += 1;
           else if (winRate < 0.15 || isLowScore) newBand -= 1;
@@ -237,18 +266,16 @@ export default async function handler(req: CustomRequest, res: CustomResponse) {
         targetDifficultyBands[gameId] = clampBand(newBand);
       } else targetDifficultyBands[gameId] = currentBand;
     }
-  } catch (err: any) { return res.status(500).json({ error: "Telemetry Refinement Exception", context: err.message }); }
 
-  // -----------------------------------------------------------------------
-  // STEP 3: CONTENT GENERATION & SEEDING (MAINTAINING EXACT PROMPTS)
-  // -----------------------------------------------------------------------
-  try {
-    for (const gameType of activeGameTypes) {
+    // -----------------------------------------------------------------------
+    // STEP 3: CONTENT GENERATION & LOGGING (VERBATIM PROMPTS + UPSERT)
+    // -----------------------------------------------------------------------
+    for (const gameType of missingGames) {
       const band = targetDifficultyBands[gameType];
       let finalPayload: any = null;
 
-      if (gameType === "STEADY_GAZE") finalPayload = SteadyGazeSchema.parse(generateSteadyGazeParams(tomorrowStr, band));
-      else if (gameType === "CLEAR_THE_AIR") finalPayload = ClearTheAirSchema.parse(generateClearTheAirParams(tomorrowStr, band));
+      if (gameType === "STEADY_GAZE") finalPayload = SteadyGazeSchema.parse(generateSteadyGazeParams(targetDateStr, band));
+      else if (gameType === "CLEAR_THE_AIR") finalPayload = ClearTheAirSchema.parse(generateClearTheAirParams(targetDateStr, band));
       else if (["EXTRACT_THE_FACTS", "GUT_CHECK", "DARK_DESIGN"].includes(gameType)) {
         let generationPrompt = "";
         let recentTopics: string[] = [];
@@ -257,12 +284,16 @@ export default async function handler(req: CustomRequest, res: CustomResponse) {
           if (history) recentTopics = history.map(h => h.scenario_data?.topic || h.scenario_data?.industry_theme).filter(Boolean);
         } catch (e) {}
 
+        const today = targetDateStr;
+        const targetDifficulty = band;
+
         if (gameType === "GUT_CHECK") {
           const targetVariance = (10.0 + band * 5.0).toFixed(1);
+
           generationPrompt = `Return ONLY a raw JSON object for 'Gut Check'.
-Date: ${tomorrowStr}.
+Date: ${today}.
 Dynamic Entropy Value: ${Date.now()}-${Math.random()}.
-Target Difficulty Tier: ${band} out of 5 (1 = Obvious and straightforward trivia benchmarks; 5 = Obscure, highly counter-intuitive metrics requiring precise approximation skills).
+Target Difficulty Tier: ${targetDifficulty} out of 5 (1 = Obvious and straightforward trivia benchmarks; 5 = Obscure, highly counter-intuitive metrics requiring precise approximation skills).
 
 THEME VARIETY INSTRUCTIONS:
 Select a fun, high-level, broad general knowledge domain that appeals to a mainstream audience. The theme must be widely recognizable and culturally accessible.
@@ -317,14 +348,12 @@ Expected JSON Structure:
 }`;
         } 
         else if (gameType === "EXTRACT_THE_FACTS") {
-          // EXPLICIT 10% CHARACTER LIMIT SCALING BASED ON DIFFICULTY BAND
-          // Base Band 3 = 280 chars. Band 2 (Abandon > 20%) = 252 chars. Band 4 (Win > 80%) = 308 chars.
           const targetCharLimit = Math.floor(280 * (1 + (band - 3) * 0.1));
 
           generationPrompt = `Return ONLY a raw JSON object for 'Extract the Facts'.
-Date: ${tomorrowStr}.
+Date: ${today}.
 Entropy Factor: ${Math.random().toString(36).substring(7)}.
-Target Difficulty Tier: ${band} out of 5 (1 = Simple and literal phrasing, 5 = Highly complex, academic phrasing with subtle, interwoven logic traps).
+Target Difficulty Tier: ${targetDifficulty} out of 5 (1 = Simple and literal phrasing, 5 = Highly complex, academic phrasing with subtle, interwoven logic traps).
 
 ANTI-REPETITION FILTER:
 You must select a radically different topic than these recent entries: [${recentTopics.map(t => `'${t}'`).join(', ')}].
@@ -357,9 +386,9 @@ Expected JSON Structure:
         } 
         else if (gameType === "DARK_DESIGN") {
           generationPrompt = `Return ONLY a raw JSON object for 'Dark Design'.
-Date: ${tomorrowStr}.
+Date: ${today}.
 Dynamic Entropy Value: ${Date.now()}-${Math.random()}.
-Target Difficulty Tier: ${band} out of 5 (1 = Simple and obvious design patterns; 5 = Highly subtle, legalistic gray-area traps with deceptive micro-copy).
+Target Difficulty Tier: ${targetDifficulty} out of 5 (1 = Simple and obvious design patterns; 5 = Highly subtle, legalistic gray-area traps with deceptive micro-copy).
 
 ANTI-REPETITION FILTER (MEMORY LOOP):
 Avoid themes matching or closely relating to these recent topics:
@@ -426,13 +455,22 @@ Expected JSON Structure:
         else if (gameType === "DARK_DESIGN") finalPayload = DarkDesignSchema.parse(parsed);
       } 
       else {
-        finalPayload = { theme_title: `Automatic Generation Run ${gameType} for Tomorrow`, scheduled_timestamp: Date.now(), distractor_shapes_count: Math.max(2, Math.min(10, 2 + band * 2)) };
+        finalPayload = { theme_title: `Automatic Generation Run ${gameType} for ${targetDateStr}`, scheduled_timestamp: Date.now(), distractor_shapes_count: Math.max(2, Math.min(10, 2 + band * 2)) };
       }
 
-      await supabase.from("daily_scenarios").delete().eq("play_date", tomorrowStr).eq("game_type_id", gameType);
-      await supabase.from("daily_scenarios").insert({ play_date: tomorrowStr, game_type_id: gameType, difficulty_band: band, scenario_data: finalPayload });
-      executionTraces.push(`[Success]: Seeded [${gameType}] (Band ${band}) for [${tomorrowStr}]`);
+      // Safe upsert to public.daily_scenarios
+      const { error: upsertErr } = await supabase.from("daily_scenarios").upsert(
+        { play_date: targetDateStr, game_type_id: gameType, difficulty_band: band, scenario_data: finalPayload },
+        { onConflict: "play_date,game_type_id" }
+      );
+      
+      if (upsertErr) throw upsertErr;
+
+      executionTraces.push(`[Success]: Generated and seeded [${gameType}] (Band ${band}) into daily_scenarios for [${targetDateStr}]`);
     }
-    return res.status(200).json({ status: "Success", processed_date: tomorrowStr, traces: executionTraces });
-  } catch (err: any) { return res.status(500).json({ error: "Content Seeding Exception", context: err.message }); }
+
+    return res.status(200).json({ status: "Success", processed_date: targetDateStr, traces: executionTraces });
+  } catch (err: any) { 
+    return res.status(500).json({ error: "Self-Healing Seeding Exception", details: err.message || String(err) }); 
+  }
 }
