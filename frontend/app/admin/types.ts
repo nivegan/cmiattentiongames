@@ -28,11 +28,31 @@ type RankingRow = {
 
 type DailyEntry = { date: string; games: GameDayMetrics[] };
 
+type DauPoint = {
+  date: string; // IST "YYYY-MM-DD"
+  dau: number; // distinct users with >=1 GAME_START that IST day
+};
+
+type WeeklyEntry = {
+  weekStartKey: string; // IST Monday "YYYY-MM-DD"
+  weekEndKey: string; // IST Sunday "YYYY-MM-DD"
+  games: GameDayMetrics[]; // same shape as a daily table, week-scoped
+};
+
 type AdminAnalytics = {
   date: string; // today, IST
   dau: number; // distinct users with >=1 GAME_START today
+  dauSeries: DauPoint[]; // ascending, zero-filled through today
   ranking: RankingRow[]; // all-time, stable row per GameType
   daily: DailyEntry[]; // newest first
+  weekly: WeeklyEntry[]; // newest first; only weeks with data
 };
 
-export type { GameDayMetrics, RankingRow, DailyEntry, AdminAnalytics };
+export type {
+  GameDayMetrics,
+  RankingRow,
+  DailyEntry,
+  DauPoint,
+  WeeklyEntry,
+  AdminAnalytics,
+};

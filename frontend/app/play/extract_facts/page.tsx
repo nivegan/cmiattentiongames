@@ -61,6 +61,11 @@ const ExtractFactsPage = () => {
   // Ref to the scrollable content area — used to scroll to top on phase/question change
   const contentScrollRef = useRef<HTMLDivElement>(null);
 
+  // Wall-clock timestamps for completion_time_sec: start-button tap → takeaway
+  // submit. Refs (not state) — read only at save time, no re-renders.
+  const startedAtRef = useRef<number | null>(null);
+  const endedAtRef = useRef<number | null>(null);
+
   // Extracts up to 5 sentences from paragraph_a to show as "verified facts" in the
   // TAKEAWAY phase. paragraph_a is the factual narrative; paragraph_b is the spin.
   // The >20 character filter removes very short fragments that appear after splitting
@@ -135,12 +140,24 @@ const ExtractFactsPage = () => {
   const handleMetricsCompletionSubmit = async () => {
     setIsSubmittingDb(true);
     try {
-      const dbTransaction = await saveUserGameStat(
-        finalComputedScore,
-        deviceIdRef.current,
-        "EXTRACT_THE_FACTS",
-        "web_extract_facts_v1",
-      );
+      const completionTimeSec =
+        startedAtRef.current !== null && endedAtRef.current !== null
+          ? Math.round((endedAtRef.current - startedAtRef.current) / 1000)
+          : 0;
+      const dbTransaction = await saveUserGameStat({
+        score: finalComputedScore,
+        deviceId: deviceIdRef.current,
+        mode: "EXTRACT_THE_FACTS",
+        source: "web_extract_facts_v1",
+        completionTimeSec,
+        details: {
+          correctCount,
+          totalQuestions: questions.length,
+          quizSelections,
+          takeawayWordCount,
+          takeawayText,
+        },
+      });
       if (dbTransaction.success) {
         logFunnelEvent(
           "GAME_COMPLETE",
@@ -542,6 +559,7 @@ const ExtractFactsPage = () => {
                 deviceIdRef.current,
                 "EXTRACT_THE_FACTS",
               );
+              startedAtRef.current = Date.now();
               setPhase("QUIZ");
             }}
             className="w-full max-w-md py-3.5 bg-[#8B2626] text-white font-extrabold text-xs tracking-widest uppercase rounded-sm shadow-[4px_4px_0px_#4A1212] hover:translate-x-px hover:translate-y-px hover:shadow-[3px_3px_0px_#4A1212] active:translate-x-0.75 active:translate-y-0.75 transition-all"
@@ -574,7 +592,10 @@ const ExtractFactsPage = () => {
         {phase === "TAKEAWAY" && (
           <button
             disabled={!isTakeawayValid}
-            onClick={() => setPhase("METRICS")}
+            onClick={() => {
+              endedAtRef.current = Date.now();
+              setPhase("METRICS");
+            }}
             className={`w-full max-w-md py-3.5 font-extrabold text-xs tracking-widest uppercase rounded-sm transition-all ${
               isTakeawayValid
                 ? "bg-[#8B2626] text-white shadow-[4px_4px_0px_#4A1212] hover:translate-x-px hover:translate-y-px hover:shadow-[3px_3px_0px_#4A1212] active:translate-x-0.75 active:translate-y-0.75"

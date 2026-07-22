@@ -112,6 +112,9 @@ type GameData = ReturnType<typeof computeGameData>;
 
 // ── Daily content generation — FULLY DETERMINISTIC per IST day ───────────────
 // Everything below flows from the single seeded `rng`. No Math.random anywhere.
+// ⚠️ SYNC: utils/nonLlmDailyContent.ts replays this generation VERBATIM (same
+// constants, palettes, and rng() call order) to record the day's targets into
+// kalari_games — even a reordered rng() call desyncs it. Update both together.
 
 const computeGameData = () => {
   const today = getTodayIST();
@@ -275,6 +278,8 @@ const MentalReflexPage = () => {
     correct: 0,
     wrong: 0,
     missed: 0,
+    elapsedSec: 0,
+    playElapsedSec: 0,
   });
 
   const deviceIdRef = useDeviceId();
@@ -288,6 +293,9 @@ const MentalReflexPage = () => {
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const rafRef = useRef<number | null>(null);
   const gs = useRef<GameState | null>(null);
+  // Wall-clock start of the session (BEGIN TEST tap) for completion_time_sec —
+  // includes the 5 s inter-round gaps, unlike playElapsed (play time only).
+  const startedAtMsRef = useRef<number | null>(null);
 
   // Updates a single lane's render state (content + horizontal centre), leaving
   // the other lanes untouched. Stable identity for use in the RAF callbacks.
@@ -333,6 +341,11 @@ const MentalReflexPage = () => {
       correct: state.correctTaps,
       wrong: state.wrongTaps,
       missed: state.missedTaps,
+      elapsedSec:
+        startedAtMsRef.current !== null
+          ? Math.round((Date.now() - startedAtMsRef.current) / 1000)
+          : 0,
+      playElapsedSec: Math.round(state.playElapsed),
     });
     setPhase("SAVING");
   }, []);
@@ -541,12 +554,19 @@ const MentalReflexPage = () => {
     if (phase !== "SAVING") return;
     const save = async () => {
       try {
-        const res = await saveUserGameStat(
-          result.score,
-          deviceIdRef.current,
-          "MENTAL_REFLEX",
-          "web_mental_reflex_v1",
-        );
+        const res = await saveUserGameStat({
+          score: result.score,
+          deviceId: deviceIdRef.current,
+          mode: "MENTAL_REFLEX",
+          source: "web_mental_reflex_v1",
+          completionTimeSec: result.elapsedSec,
+          details: {
+            correct: result.correct,
+            wrong: result.wrong,
+            missed: result.missed,
+            playElapsedSec: result.playElapsedSec,
+          },
+        });
         if (res.error === "ALREADY_PLAYED") setAlreadyPlayed(true);
         else if (!res.success) setSaveFailed(true);
         else
@@ -558,7 +578,7 @@ const MentalReflexPage = () => {
       }
     };
     save();
-  }, [deviceIdRef, phase, result.score]);
+  }, [deviceIdRef, phase, result]);
 
   // Cancel any pending frame on unmount.
   useEffect(
@@ -685,6 +705,7 @@ const MentalReflexPage = () => {
                     deviceIdRef.current,
                     "MENTAL_REFLEX",
                   );
+                  startedAtMsRef.current = Date.now();
                   setPhase("PLAYING");
                 }}
                 className="w-full py-3 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5 border border-[#232323]"

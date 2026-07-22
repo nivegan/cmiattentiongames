@@ -52,6 +52,8 @@ import { Badge } from "@/components/ui/badge";
 
 // Generates the spawn seed from today's IST date. All bubble positions and
 // sequences are deterministic — same day → same game for all players.
+// ⚠️ SYNC: utils/nonLlmDailyContent.ts re-implements this seed derivation to
+// record the day's params into kalari_games — update both together.
 const computeGameData = () => {
   const today = getTodayIST();
   return { spawnSeed: getDailySeed(today + "clear_air_v2") };
@@ -146,6 +148,8 @@ const ClearTheAirPage = () => {
     penalties: 0,
     totalGrays: 0,
     graysAutoBurst: 0,
+    livesLeft: MAX_LIVES,
+    elapsedSec: 0,
   });
 
   const deviceIdRef = useDeviceId();
@@ -227,6 +231,10 @@ const ClearTheAirPage = () => {
       penalties: state.penalties,
       totalGrays: state.totalGrays,
       graysAutoBurst: state.graysAutoBurst,
+      livesLeft: state.livesLeft,
+      // Play time in whole seconds — the timer counts down from GAME_DURATION,
+      // and the game can end early when lives run out.
+      elapsedSec: Math.round(GAME_DURATION - Math.max(0, state.timeLeft)),
     });
     setPhase("SAVING");
   }, []);
@@ -494,12 +502,20 @@ const ClearTheAirPage = () => {
     if (phase !== "SAVING") return;
     const save = async () => {
       try {
-        const res = await saveUserGameStat(
-          result.score,
-          deviceIdRef.current,
-          "CLEAR_THE_AIR",
-          "web_clear_the_air_v1",
-        );
+        const res = await saveUserGameStat({
+          score: result.score,
+          deviceId: deviceIdRef.current,
+          mode: "CLEAR_THE_AIR",
+          source: "web_clear_the_air_v1",
+          completionTimeSec: result.elapsedSec,
+          details: {
+            hits: result.hits,
+            totalGrays: result.totalGrays,
+            graysAutoBurst: result.graysAutoBurst,
+            penalties: result.penalties,
+            livesLeft: result.livesLeft,
+          },
+        });
         if (res.error === "ALREADY_PLAYED") setAlreadyPlayed(true);
         else if (!res.success) setSaveFailed(true);
         else
@@ -511,7 +527,7 @@ const ClearTheAirPage = () => {
       }
     };
     save();
-  }, [deviceIdRef, phase, result.score]);
+  }, [deviceIdRef, phase, result]);
 
   // Cleanup: cancel any pending RAF when the component unmounts to prevent
   // the loop from running after the user has navigated away.

@@ -137,7 +137,7 @@ const WeeklyReviewModal = ({
             </div>
           )}
 
-          {/* Avg completion time — hidden while reaction_time_ms isn't tracked */}
+          {/* Avg completion time — hidden for weeks with no tracked completion_time_sec */}
           {showAvgTime && (
             <div className="flex items-center justify-between text-sm text-[#232323]">
               <span className="font-bold tracking-[0.2em] uppercase text-[#232323]/60">

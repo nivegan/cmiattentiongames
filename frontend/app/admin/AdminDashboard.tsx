@@ -1,11 +1,13 @@
 "use client";
 // admin/AdminDashboard.tsx
 // Client half of the /admin page (the server half gates with isAdmin()).
-// Fetches /api/admin and renders:
-//   - header stats (today's date + DAU)
-//   - all-time ranking table of every game, sortable by any numeric column
-//   - per-IST-day log tables, newest day first
-// Plain sortable shadcn tables — no charting library (US 3.5).
+// Fetches /api/admin and renders two sections behind a Daily/Weekly toggle,
+// both topped by the same DAU-per-day chart (hand-rolled SVG in DauChart —
+// still no charting library):
+//   - Daily : per-IST-day log tables, newest day first
+//   - Weekly: the sortable all-time ranking table + a week dropdown showing
+//             the selected IST week's (Mon–Sun) per-game metrics table
+// Tables are plain sortable shadcn tables (US 3.5).
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -17,6 +19,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { GAME_CATALOG } from "@/lib/gameCatalog";
+import { formatWeekLabel } from "@/lib/formatWeekLabel";
+import { DauChart } from "./DauChart";
 import type { AdminAnalytics, GameDayMetrics, RankingRow } from "./types";
 
 // mode → display label, derived from the catalog (the home grid's source of
@@ -64,11 +68,71 @@ const RANKING_COLUMNS: { key: SortKey; label: string }[] = [
   { key: "avgScore", label: "Avg Score" },
 ];
 
+// The 8-column per-game metrics table, shared by the daily log (one per day)
+// and the weekly section (one for the selected week) — the fields mean the
+// same thing at either granularity.
+const GameMetricsTable = ({ games }: { games: GameDayMetrics[] }) => (
+  <div className="border border-[#232323] bg-white overflow-x-auto">
+    <Table>
+      <TableHeader>
+        <TableRow>
+          {[
+            "Game",
+            "Played",
+            "Started",
+            "Completed",
+            "Abandoned",
+            "Drop-off Rate",
+            "Avg Completion Time",
+            "Avg Score",
+          ].map((h, i) => (
+            <TableHead
+              key={h}
+              className={`font-bold text-[#232323] whitespace-nowrap ${i > 0 ? "text-right" : ""}`}
+            >
+              {h}
+            </TableHead>
+          ))}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {games.map((g: GameDayMetrics) => (
+          <TableRow key={g.game}>
+            <TableCell className="font-medium whitespace-nowrap">
+              {labelFor(g.game)}
+            </TableCell>
+            <TableCell className="text-right">{fmtCount(g.played)}</TableCell>
+            <TableCell className="text-right">{fmtCount(g.starts)}</TableCell>
+            <TableCell className="text-right">
+              {fmtCount(g.completed)}
+            </TableCell>
+            <TableCell className="text-right">
+              {fmtCount(g.abandoned)}
+            </TableCell>
+            <TableCell className="text-right">
+              {fmtRate(g.dropOffRate)}
+            </TableCell>
+            <TableCell className="text-right">
+              {fmtSec(g.avgTimeSpentSec)}
+            </TableCell>
+            <TableCell className="text-right">{fmtScore(g.avgScore)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  </div>
+);
+
 const AdminDashboard = () => {
   const [data, setData] = useState<AdminAnalytics | null>(null);
   const [isError, setIsError] = useState(false);
   // Default: "Most Played" first, per the story's primary ranking.
   const [sort, setSort] = useState<SortState>({ key: "plays", dir: "desc" });
+  // Which section is shown; both share the DAU chart at the top.
+  const [view, setView] = useState<"daily" | "weekly">("daily");
+  // null = "the newest week with data" (derived below, not synced in an
+  // effect — newest-first ordering makes index 0 the default).
+  const [selectedWeekKey, setSelectedWeekKey] = useState<string | null>(null);
 
   // Bumping reloadKey re-runs the fetch effect (retry). The async loader is
   // defined *inside* the effect — the project's standard pattern that keeps
@@ -142,6 +206,10 @@ const AdminDashboard = () => {
       </div>
     );
 
+  const activeWeekKey = selectedWeekKey ?? data.weekly[0]?.weekStartKey ?? null;
+  const activeWeek =
+    data.weekly.find((w) => w.weekStartKey === activeWeekKey) ?? null;
+
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#232323] font-mono">
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-10">
@@ -158,139 +226,150 @@ const AdminDashboard = () => {
           </div>
         </header>
 
-        {/* All-time ranking */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-bold tracking-widest uppercase text-[#8B2626]">
-            Game Ranking (all time)
-          </h2>
-          <div className="border border-[#232323] bg-white overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="font-bold text-[#232323]">
-                    Game
-                  </TableHead>
-                  {RANKING_COLUMNS.map((col) => (
-                    <TableHead key={col.key} className="text-right">
-                      <button
-                        onClick={() => toggleSort(col.key)}
-                        className="font-bold text-[#232323] hover:text-[#8B2626] whitespace-nowrap"
-                      >
-                        {col.label}
-                        {sort.key === col.key
-                          ? sort.dir === "desc"
-                            ? " ▼"
-                            : " ▲"
-                          : ""}
-                      </button>
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rankingSorted.map((row: RankingRow) => (
-                  <TableRow key={row.game}>
-                    <TableCell className="font-medium whitespace-nowrap">
-                      {labelFor(row.game)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {fmtCount(row.plays)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {fmtCount(row.starts)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {fmtCount(row.abandoned)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {fmtRate(row.dropOffRate)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {fmtSec(row.avgCompletionTimeSec)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {fmtScore(row.avgScore)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </section>
+        {/* Daily / Weekly segmented toggle (history-page pattern, retro skin) */}
+        <div className="flex w-fit border border-[#232323] bg-white shadow-[4px_4px_0px_#232323]">
+          {(["daily", "weekly"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              className={`px-6 py-2 text-xs font-bold tracking-widest uppercase transition-colors cursor-pointer ${
+                view === v
+                  ? "bg-[#8B2626] text-[#FAF6F0]"
+                  : "text-[#232323] hover:text-[#8B2626]"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
 
-        {/* Daily log */}
+        {/* DAU chart — shared top of BOTH sections */}
         <section className="space-y-3">
           <h2 className="text-sm font-bold tracking-widest uppercase text-[#8B2626]">
-            Daily Log
+            Daily Active Users
           </h2>
-          {data.daily.length === 0 && (
+          {data.dauSeries.length === 0 ? (
             <p className="text-xs text-[#232323]/60">
               No activity recorded yet.
             </p>
+          ) : (
+            <div className="border border-[#232323] bg-white p-4">
+              <DauChart series={data.dauSeries} />
+            </div>
           )}
-          {data.daily.map((day) => (
-            <div key={day.date} className="space-y-1">
-              <h3 className="text-xs font-bold tracking-wide">
-                {fmtDay(day.date)}
-              </h3>
+        </section>
+
+        {view === "daily" ? (
+          /* Daily log */
+          <section className="space-y-3">
+            <h2 className="text-sm font-bold tracking-widest uppercase text-[#8B2626]">
+              Daily Log
+            </h2>
+            {data.daily.length === 0 && (
+              <p className="text-xs text-[#232323]/60">
+                No activity recorded yet.
+              </p>
+            )}
+            {data.daily.map((day) => (
+              <div key={day.date} className="space-y-1">
+                <h3 className="text-xs font-bold tracking-wide">
+                  {fmtDay(day.date)}
+                </h3>
+                <GameMetricsTable games={day.games} />
+              </div>
+            ))}
+          </section>
+        ) : (
+          <>
+            {/* All-time ranking */}
+            <section className="space-y-3">
+              <h2 className="text-sm font-bold tracking-widest uppercase text-[#8B2626]">
+                Game Ranking (all time)
+              </h2>
               <div className="border border-[#232323] bg-white overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      {[
-                        "Game",
-                        "Played",
-                        "Started",
-                        "Completed",
-                        "Abandoned",
-                        "Drop-off Rate",
-                        "Avg Completion Time",
-                        "Avg Score",
-                      ].map((h, i) => (
-                        <TableHead
-                          key={h}
-                          className={`font-bold text-[#232323] whitespace-nowrap ${i > 0 ? "text-right" : ""}`}
-                        >
-                          {h}
+                      <TableHead className="font-bold text-[#232323]">
+                        Game
+                      </TableHead>
+                      {RANKING_COLUMNS.map((col) => (
+                        <TableHead key={col.key} className="text-right">
+                          <button
+                            onClick={() => toggleSort(col.key)}
+                            className="font-bold text-[#232323] hover:text-[#8B2626] whitespace-nowrap"
+                          >
+                            {col.label}
+                            {sort.key === col.key
+                              ? sort.dir === "desc"
+                                ? " ▼"
+                                : " ▲"
+                              : ""}
+                          </button>
                         </TableHead>
                       ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {day.games.map((g: GameDayMetrics) => (
-                      <TableRow key={g.game}>
+                    {rankingSorted.map((row: RankingRow) => (
+                      <TableRow key={row.game}>
                         <TableCell className="font-medium whitespace-nowrap">
-                          {labelFor(g.game)}
+                          {labelFor(row.game)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {fmtCount(g.played)}
+                          {fmtCount(row.plays)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {fmtCount(g.starts)}
+                          {fmtCount(row.starts)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {fmtCount(g.completed)}
+                          {fmtCount(row.abandoned)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {fmtCount(g.abandoned)}
+                          {fmtRate(row.dropOffRate)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {fmtRate(g.dropOffRate)}
+                          {fmtSec(row.avgCompletionTimeSec)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {fmtSec(g.avgTimeSpentSec)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {fmtScore(g.avgScore)}
+                          {fmtScore(row.avgScore)}
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
-            </div>
-          ))}
-        </section>
+            </section>
+
+            {/* Weekly log — one table for the selected IST week (Mon–Sun) */}
+            <section className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-sm font-bold tracking-widest uppercase text-[#8B2626]">
+                  Weekly Log
+                </h2>
+                {data.weekly.length > 0 && (
+                  <select
+                    value={activeWeekKey ?? ""}
+                    onChange={(e) => setSelectedWeekKey(e.target.value)}
+                    className="border border-[#232323] bg-white px-3 py-2 text-xs font-mono text-[#232323] cursor-pointer"
+                  >
+                    {data.weekly.map((w) => (
+                      <option key={w.weekStartKey} value={w.weekStartKey}>
+                        {formatWeekLabel(w.weekStartKey, w.weekEndKey)}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {activeWeek ? (
+                <GameMetricsTable games={activeWeek.games} />
+              ) : (
+                <p className="text-xs text-[#232323]/60">No weekly data yet.</p>
+              )}
+            </section>
+          </>
+        )}
       </div>
     </div>
   );

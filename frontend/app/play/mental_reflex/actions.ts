@@ -12,11 +12,17 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { checkHasPlayedToday } from "@/utils/checkHasPlayedToday";
+import { recordNonLlmDaily } from "@/utils/nonLlmDailyContent";
+import { getTodayIST } from "@/utils/seedRng";
 
 const checkAlreadyPlayed = async (
   deviceId: string, // anonymous localStorage UUID
 ): Promise<{ alreadyPlayed: boolean }> => {
   try {
+    // Record today's seed-derived round targets into kalari_games
+    // (idempotent, swallows its own errors). Runs before the lock check so
+    // the day gets recorded even for already-played visitors.
+    await recordNonLlmDaily("mental_reflex", getTodayIST());
     const { userId } = await auth();
     // Prefer the Clerk user ID (signed-in); fall back to anonymous device UUID.
     const targetIdentifier = userId || deviceId;

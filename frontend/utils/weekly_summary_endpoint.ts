@@ -18,7 +18,7 @@ interface UserStatRow {
   game_type_id: string | null;
   score: number;
   is_success: boolean;
-  reaction_time_ms: number | null;
+  completion_time_sec: number | null;
 }
 
 // ==========================================
@@ -66,7 +66,7 @@ async function generateWeeklySummaries() {
         game_type_id: true,
         score: true,
         is_success: true,
-        reaction_time_ms: true,
+        completion_time_sec: true,
       },
     });
 
@@ -88,7 +88,7 @@ async function generateWeeklySummaries() {
 
       userRecords.forEach((row) => {
         const scoreVal = Number(row.score) || 0;
-        totalReactionTime += row.reaction_time_ms || 0;
+        totalReactionTime += row.completion_time_sec || 0;
         grandTotalScore += scoreVal;
 
         if (row.game_type_id && statsMap[row.game_type_id]) {
@@ -128,7 +128,7 @@ async function generateWeeklySummaries() {
         totalGamesPlayedCount > 0
           ? totalReactionTime / totalGamesPlayedCount
           : 0;
-      const average_completion_time = `${(globalAvgTimeMs / 1000).toFixed(1)}s`;
+      const average_completion_time = `${globalAvgTimeMs.toFixed(1)}s`;
 
       // Global average score normalization using the updated formula rule
       const averageScore =

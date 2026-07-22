@@ -102,6 +102,11 @@ const GutCheckPage = () => {
   // Ref to the scrollable main content area — used to scroll to top on phase change
   const containerScrollRef = useRef<HTMLDivElement>(null);
 
+  // Wall-clock timestamps for completion_time_sec: start-button tap → last
+  // confidence submit. Refs (not state) — read only at save time, no re-renders.
+  const startedAtRef = useRef<number | null>(null);
+  const endedAtRef = useRef<number | null>(null);
+
   // Load game data once on mount. Checks the daily lock and fetches (or returns
   // cached) AI-generated questions. Redirects home if already played today.
   useEffect(() => {
@@ -257,12 +262,20 @@ const GutCheckPage = () => {
   const handleProcessAndSyncScores = async () => {
     setIsSubmittingDb(true);
     try {
-      const connectionResult = await saveUserGameStat(
-        calculatedPerformanceMetrics.overallScore,
-        deviceIdRef.current,
-        "GUT_CHECK",
-        "web_gut_check_v1",
-      );
+      const { overallScore, avgConfidence, avgAccuracy, breakdowns } =
+        calculatedPerformanceMetrics;
+      const completionTimeSec =
+        startedAtRef.current !== null && endedAtRef.current !== null
+          ? Math.round((endedAtRef.current - startedAtRef.current) / 1000)
+          : 0;
+      const connectionResult = await saveUserGameStat({
+        score: overallScore,
+        deviceId: deviceIdRef.current,
+        mode: "GUT_CHECK",
+        source: "web_gut_check_v1",
+        completionTimeSec,
+        details: { avgConfidence, avgAccuracy, breakdowns },
+      });
       if (connectionResult.success) {
         logFunnelEvent("GAME_COMPLETE", deviceIdRef.current, "GUT_CHECK");
         setPhase("RESULTS");
@@ -341,6 +354,7 @@ const GutCheckPage = () => {
             <button
               onClick={() => {
                 logFunnelEvent("GAME_START", deviceIdRef.current, "GUT_CHECK");
+                startedAtRef.current = Date.now();
                 setPhase("ANCHOR");
               }}
               className="w-full py-3 bg-[#8B2626] text-[#FAF6F0] font-black text-xs tracking-widest uppercase shadow-[4px_4px_0px_#232323] active:translate-x-0.5 active:translate-y-0.5 border border-[#232323]"
@@ -468,6 +482,7 @@ const GutCheckPage = () => {
                   setCurrentRoundIndex((prev) => prev + 1);
                   setPhase("ANCHOR");
                 } else {
+                  endedAtRef.current = Date.now();
                   setPhase("METRICS");
                 }
               }}

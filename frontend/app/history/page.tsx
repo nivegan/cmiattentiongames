@@ -197,7 +197,8 @@ const HistoryPage = () => {
                     <div className="flex items-center gap-2">
                       <Calendar className="size-5 text-stone-400" />
                       <span className="font-serif font-bold text-lg text-[#232323]">
-                        Week {formatWeekLabel(week.weekStartKey, week.weekEndKey)}
+                        Week{" "}
+                        {formatWeekLabel(week.weekStartKey, week.weekEndKey)}
                       </span>
                     </div>
 
@@ -235,7 +236,7 @@ const HistoryPage = () => {
                       </div>
                     )}
 
-                    {/* Avg time — hidden while reaction_time_ms isn't tracked */}
+                    {/* Avg time — hidden for weeks with no tracked completion_time_sec */}
                     {week.payload.average_completion_time !== "0.0s" && (
                       <p className="text-sm text-stone-500">
                         Avg completion time:{" "}
@@ -263,8 +264,8 @@ const HistoryPage = () => {
             // Weekly empty state
             <div className="text-center py-16 space-y-6">
               <p className="text-stone-500">
-                No weekly summaries yet — your first review appears after a
-                full week.
+                No weekly summaries yet — your first review appears after a full
+                week.
               </p>
               <Button
                 asChild

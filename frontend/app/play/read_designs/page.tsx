@@ -185,12 +185,14 @@ const ReadDesignsPage = () => {
   const handleContinue = async () => {
     setIsSubmittingDb(true);
     try {
-      const dbTransaction = await saveUserGameStat(
-        finalScore,
-        deviceIdRef.current,
-        "READ_BETWEEN_DESIGNS",
-        "web_read_designs_v1",
-      );
+      const dbTransaction = await saveUserGameStat({
+        score: finalScore,
+        deviceId: deviceIdRef.current,
+        mode: "READ_BETWEEN_DESIGNS",
+        source: "web_read_designs_v1",
+        completionTimeSec: playSeconds,
+        details: { patternWrong, techniqueWrong, skillTier },
+      });
       if (dbTransaction.success) {
         logFunnelEvent(
           "GAME_COMPLETE",

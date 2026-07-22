@@ -12,16 +12,21 @@
 // not read that table (they use `kalari_games` / client-side seeds); this
 // preserves the backend pipeline's behavior as-is.
 //
-// Pipeline: Phase 1 analyses the last 7 days of `game_logs` to adjust
-// difficulty parameters (word count / speed / variance / distractor rules);
+// Pipeline: Phase 1 formerly analysed the last 7 days of `game_logs` to adjust
+// difficulty parameters (word count / speed / variance / distractor rules) —
+// that table was dropped (2026-07), so the telemetry read is stubbed to empty
+// and Phase 1 always falls through to the default parameters;
 // Phase 2 generates each scheduled game's content (Gemini for text games,
-// seeded math for sensory games) and replaces tomorrow's rows.
+// seeded math for sensory games) and replaces tomorrow's rows, additionally
+// mirroring the non-LLM games' payloads into `kalari_games` for record-keeping.
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/utils/prismaInit";
 import scheduleData from "@/data/dailySchedule.json";
+import { buildNonLlmContent } from "@/utils/nonLlmDailyContent";
+import type { NonLlmSlug } from "@/utils/nonLlmDailyContent";
 
 // Gemini generation for up to two games can take a while.
 export const maxDuration = 60;
@@ -194,6 +199,10 @@ interface DifficultyParams {
 const errMessage = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
 
+// Schedule slugs of the seed-computed (non-Gemini) games, mirrored into
+// kalari_games in addition to daily_scenarios.
+const NON_LLM_SLUGS = ["steady_gaze", "clear_air", "mental_reflex"];
+
 // =========================================================================
 // 4. MAIN ENDPOINT HANDLER
 // =========================================================================
@@ -286,13 +295,10 @@ export const GET = async (req: NextRequest) => {
   // PIPELINE PHASE 1: TELEMETRY ANALYSIS ENGINE
   // -----------------------------------------------------------------------
   try {
-    const sevenDaysAgo = new Date(now);
-    sevenDaysAgo.setDate(now.getDate() - 7);
-
-    const parsedLogs: LogRow[] = await prisma.game_logs.findMany({
-      where: { created_at: { gte: sevenDaysAgo } },
-      select: { game_type_id: true, status: true, final_score: true },
-    });
+    // game_logs was dropped (2026-07); the empty stub keeps Phase 1 falling
+    // through to the default difficulty parameters (its effective behavior
+    // when the table existed but was never written).
+    const parsedLogs: LogRow[] = [];
 
     if (parsedLogs.length >= 5) {
       Object.keys(adjustments).forEach((gameId) => {
@@ -482,6 +488,31 @@ export const GET = async (req: NextRequest) => {
           scenario_data: finalPayload,
         },
       });
+
+      // Mirror the non-LLM (seed-computed) games into kalari_games so every
+      // daily game has a row there. Record-keeping only — the game pages stay
+      // seed-based and never read these rows. Content is the REAL seed-derived
+      // params (utils/nonLlmDailyContent.ts) — the same bytes the on-demand
+      // writer in each game's checkAlreadyPlayed produces, so writer order is
+      // irrelevant. `topic` stays null so the LLM generators' anti-repetition
+      // loop (which reads topic across ALL modes) is not polluted.
+      if (NON_LLM_SLUGS.includes(gameType)) {
+        const realParams = buildNonLlmContent(
+          gameType as NonLlmSlug,
+          tomorrowStr,
+        );
+        await prisma.kalari_games.upsert({
+          where: {
+            mode_scheduled_for: { mode: gameType, scheduled_for: tomorrowDate },
+          },
+          update: { content: realParams },
+          create: {
+            mode: gameType,
+            content: realParams,
+            scheduled_for: tomorrowDate,
+          },
+        });
+      }
 
       executionTraces.push(
         `[Pipeline Phase 2]: Seeded dynamically adjusted daily scenario for [${gameType}]`,

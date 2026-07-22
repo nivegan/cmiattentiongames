@@ -6,11 +6,15 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { checkHasPlayedToday } from "@/utils/checkHasPlayedToday";
+import { recordNonLlmDaily } from "@/utils/nonLlmDailyContent";
+import { getTodayIST } from "@/utils/seedRng";
 
 const checkAlreadyPlayed = async (
   deviceId: string, // anonymous localStorage UUID
 ): Promise<{ alreadyPlayed: boolean }> => {
   try {
+    // Record today's seed params into kalari_games (idempotent, error-swallowing).
+    await recordNonLlmDaily("clear_air", getTodayIST());
     const { userId } = await auth();
     const targetIdentifier = userId || deviceId;
     if (!targetIdentifier) return { alreadyPlayed: false };

@@ -62,6 +62,8 @@ const hslToHex = (h: number, s: number, l: number): string => {
 
 // Computes all game parameters from today's IST date — no server needed.
 // Results are deterministic: same date → same colors and spawn sequence.
+// ⚠️ SYNC: utils/nonLlmDailyContent.ts re-implements this (and hslToHex) to
+// record the day's real params into kalari_games — update both together.
 const computeGameData = () => {
   const today = getTodayIST();
   // getDailySeed returns a uint32 integer — needed for mulberry32's PRNG.
@@ -141,6 +143,7 @@ const SteadyGazePage = () => {
     hits: 0,
     misses: 0,
     penaltyTaps: 0,
+    elapsedSec: 0,
   });
 
   const deviceIdRef = useDeviceId();
@@ -212,6 +215,9 @@ const SteadyGazePage = () => {
       hits: state.hits,
       misses: state.misses,
       penaltyTaps: state.penaltyTaps,
+      // Play time in whole seconds — the timer counts down from GAME_DURATION,
+      // and the game can end early on two misses.
+      elapsedSec: Math.round(GAME_DURATION - Math.max(0, state.timeLeft)),
     });
     setPhase("SAVING");
   }, []);
@@ -367,12 +373,18 @@ const SteadyGazePage = () => {
     if (phase !== "SAVING") return;
     const save = async () => {
       try {
-        const res = await saveUserGameStat(
-          result.score,
-          deviceIdRef.current,
-          "STEADY_GAZE",
-          "web_steady_gaze_v1",
-        );
+        const res = await saveUserGameStat({
+          score: result.score,
+          deviceId: deviceIdRef.current,
+          mode: "STEADY_GAZE",
+          source: "web_steady_gaze_v1",
+          completionTimeSec: result.elapsedSec,
+          details: {
+            hits: result.hits,
+            misses: result.misses,
+            penaltyTaps: result.penaltyTaps,
+          },
+        });
         if (res.error === "ALREADY_PLAYED") setAlreadyPlayed(true);
         else if (!res.success) setSaveFailed(true);
         else
@@ -384,7 +396,7 @@ const SteadyGazePage = () => {
       }
     };
     save();
-  }, [deviceIdRef, phase, result.score]);
+  }, [deviceIdRef, phase, result]);
 
   // Cleanup: cancel any pending RAF frame when the component is unmounted.
   // Without this, the loop would keep running after the user navigates away

@@ -19,7 +19,7 @@ type WeeklySummaryPayload = {
     game_type_id: GameMode | null; // null = no games played that week
     highest_score: number; // that game's average score, rounded
   };
-  average_completion_time: string; // e.g. "4.2s"; "0.0s" until reaction_time_ms is tracked
+  average_completion_time: string; // e.g. "4.2s" (from completion_time_sec); "0.0s" for weeks with no tracked times
   summary_copy: string; // witty one-liner chosen by the copy-band matrix
 };
 

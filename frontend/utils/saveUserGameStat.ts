@@ -20,13 +20,22 @@ import { prisma } from "@/utils/prismaInit";
 import { checkHasPlayedToday } from "@/utils/checkHasPlayedToday";
 import { capturePosthog } from "@/utils/posthogServer";
 import type { GameMode } from "@/utils/gameMode";
+import type { Prisma } from "@/lib/generated/prisma/client";
+
+// NOT exported — a "use server" file may only export async functions.
+interface SaveGameStatInput {
+  score: number; // the final computed score (0–100)
+  deviceId: string; // anonymous localStorage UUID; "" if the user is signed in
+  mode: GameMode; // which game, e.g. "GUT_CHECK"
+  source: string; // tracking tag, e.g. "web_gut_check_v1"
+  completionTimeSec: number; // whole seconds from the start-button tap to game end
+  details: Record<string, unknown>; // per-game results-screen stats, dumped into metadata
+}
 
 const saveUserGameStat = async (
-  score: number, // the final computed score (0–100)
-  deviceId: string, // anonymous localStorage UUID; "" if the user is signed in
-  mode: GameMode, // which game, e.g. "GUT_CHECK"
-  source: string, // tracking tag, e.g. "web_gut_check_v1"
+  input: SaveGameStatInput,
 ): Promise<{ success: boolean; error?: "ALREADY_PLAYED" | string }> => {
+  const { score, deviceId, mode, source, completionTimeSec, details } = input;
   try {
     // auth() reads the Clerk session from the request headers.
     // userId is null for anonymous (not-signed-in) users.
@@ -60,8 +69,10 @@ const saveUserGameStat = async (
         difficulty_band: 1.0, // reserved for future adaptive difficulty; fixed at 1 now
         score,
         is_success: true, // all submitted games count as "success" for now
-        reaction_time_ms: null, // not tracked yet
-        metadata: { source }, // records which game version submitted this row
+        completion_time_sec: Math.max(0, Math.round(completionTimeSec)),
+        // Which game version submitted this row + the full results-screen stats.
+        // details crossed the server-action boundary, so it is already JSON-safe.
+        metadata: { source, ...details } as Prisma.InputJsonObject,
       },
     });
 
@@ -71,6 +82,7 @@ const saveUserGameStat = async (
       mode,
       score,
       source,
+      completion_time_sec: Math.max(0, Math.round(completionTimeSec)),
     });
 
     return { success: true };
