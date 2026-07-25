@@ -8,6 +8,11 @@
 
 import { OnboardingFlow } from "@/components/OnboardingFlow";
 import { HomeGrid } from "@/components/HomeGrid";
+import type { Viewport } from "next";
+
+// Browser-chrome theme color for the install/home route (app/layout.tsx is
+// off-limits; the manifest's theme_color covers the installed PWA everywhere).
+export const viewport: Viewport = { themeColor: "#FAF6F0" };
 
 const HomePage = () => {
   return <OnboardingFlow home={<HomeGrid />} />;

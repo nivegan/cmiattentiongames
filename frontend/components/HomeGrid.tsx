@@ -29,6 +29,9 @@ import type { WeeklyReviewResult } from "@/utils/weeklySummaryTypes";
 import { AboutKalariModal } from "@/components/AboutKalariModal";
 import { SendFeedbackModal } from "@/components/SendFeedbackModal";
 import { WeeklyReviewModal } from "@/components/WeeklyReviewModal";
+import { PushBellButton } from "@/components/PushBellButton";
+import { InstallAppButton } from "@/components/InstallAppButton";
+import { IosInstallModal } from "@/components/IosInstallModal";
 import scheduleData from "@/data/dailySchedule.json";
 
 const schedule = scheduleData.schedule as Record<string, string[]>;
@@ -89,6 +92,9 @@ const HomeGrid = () => {
     null,
   );
   const [weeklyOpen, setWeeklyOpen] = useState(false);
+  // iOS Add-to-Home-Screen instructions — opened by the install strip or the
+  // bell's ios-hint mode (iOS has no install/push API in a Safari tab).
+  const [iosModalOpen, setIosModalOpen] = useState(false);
 
   useEffect(() => {
     // Server action (auth() resolves identity server-side); update on resolve.
@@ -170,6 +176,12 @@ const HomeGrid = () => {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Bell → daily push reminder opt-in (hidden if unsupported) */}
+            <PushBellButton
+              deviceIdRef={deviceIdRef}
+              onIosHint={() => setIosModalOpen(true)}
+            />
+
             {/* Person icon → History */}
             <Link
               href="/history"
@@ -232,6 +244,9 @@ const HomeGrid = () => {
             </Show>
           </div>
         </header>
+
+        {/* PWA install strip (hidden when already installed / not installable) */}
+        <InstallAppButton onIosClick={() => setIosModalOpen(true)} />
 
         {/* Tiers + cards — only today's scheduled games; empty tiers hidden */}
         {total === 0 ? (
@@ -303,6 +318,10 @@ const HomeGrid = () => {
             payload={weeklyReview.payload}
           />
         )}
+      <IosInstallModal
+        open={iosModalOpen}
+        onClose={() => setIosModalOpen(false)}
+      />
       <Toaster richColors />
     </div>
   );
