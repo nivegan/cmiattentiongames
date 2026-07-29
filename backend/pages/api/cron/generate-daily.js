@@ -1,4 +1,3 @@
-import { IncomingMessage, ServerResponse } from "http";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { GoogleGenAI } from "@google/genai";
@@ -14,25 +13,12 @@ if (!supabaseUrl || !supabaseKey || !geminiApiKey) {
   throw new Error("[System Setup Error] Missing required environment variables (SUPABASE_URL, SUPABASE_KEY, or GOOGLE_GENERATIVE_AI_API_KEY).");
 }
 
-const supabase = createClient(supabaseUrl!, supabaseKey!);
-const ai = new GoogleGenAI({ apiKey: geminiApiKey! });
+const supabase = createClient(supabaseUrl, supabaseKey);
+const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
 // =========================================================================
 // 1. LIGHTWEIGHT TYPES & PREPROCESSING SCHEMAS
 // =========================================================================
-interface CustomRequest extends IncomingMessage {
-  query: Partial<{ [key: string]: string | string[] }>;
-  cookies: { [key: string]: string };
-  body: any;
-  method?: string;
-}
-
-interface CustomResponse extends ServerResponse {
-  status: (statusCode: number) => CustomResponse;
-  json: (body: any) => void;
-  send: (body: any) => void;
-}
-
 const LimitedString = z.preprocess(
   (val) => (typeof val === "string" ? val.substring(0, 150) : val),
   z.string().max(150, "Content exceeds strict 150-character limit")
@@ -122,22 +108,19 @@ const ClearTheAirSchema = z.object({
   smudge_opacity_penalty: z.number(),
 });
 
-interface KalariGameRecord { mode: string; difficulty_band: number | null; }
-interface UserStatRecord { game_type_id: string; difficulty_band?: number | null; is_success: boolean | null; score: number | null; completion_time: number | null; }
-
 // =========================================================================
 // 3. GENERATOR UTILITIES
 // =========================================================================
-function getDailySeed(dateStr: string): number {
+function getDailySeed(dateStr) {
   let hash = 0;
   for (let i = 0; i < dateStr.length; i++) hash = dateStr.charCodeAt(i) + ((hash << 5) - hash);
   return Math.abs(Math.sin(hash)) % 1;
 }
 
-function hslToHex(h: number, s: number, l: number): string {
+function hslToHex(h, s, l) {
   l /= 100;
   const a = (s * Math.min(l, 1 - l)) / 100;
-  const f = (n: number) => {
+  const f = (n) => {
     const k = (n + h / 30) % 12;
     const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
     return Math.round(255 * color).toString(16).padStart(2, "0");
@@ -145,11 +128,12 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-function generateSteadyGazeParams(today: string, difficultyBand: number): z.infer<typeof SteadyGazeSchema> {
+function generateSteadyGazeParams(today, difficultyBand, speedMultiplier = 1.0) {
   const seed = getDailySeed(today + "steady_gaze");
+  const baseSpeed = 1.0 * (0.8 + (difficultyBand - 1) * 0.3);
   return {
     theme_title: `Pure Awareness Run #${Math.floor(seed * 360)}`,
-    speed: parseFloat((1.0 * (0.8 + (difficultyBand - 1) * 0.3)).toFixed(2)),
+    speed: parseFloat((baseSpeed * speedMultiplier).toFixed(2)),
     screen_color: hslToHex(Math.floor(seed * 360), 60, 45),
     dot_color: hslToHex((Math.floor(seed * 360) + 180) % 360, 85, 65),
     shimmer_frequency: parseFloat((2.0 + seed * 4.0).toFixed(1)),
@@ -160,11 +144,12 @@ function generateSteadyGazeParams(today: string, difficultyBand: number): z.infe
   };
 }
 
-function generateClearTheAirParams(today: string, difficultyBand: number): z.infer<typeof ClearTheAirSchema> {
+function generateClearTheAirParams(today, difficultyBand, speedMultiplier = 1.0) {
   const seed = getDailySeed(today + "clear_the_air");
+  const baseSpeed = 1.2 * (0.8 + (difficultyBand - 1) * 0.3);
   return {
     theme_title: `Dissolving Distractions Pattern v${Math.floor(seed * 1000)}`,
-    bubble_speed: parseFloat((1.2 * (0.8 + (difficultyBand - 1) * 0.3)).toFixed(2)),
+    bubble_speed: parseFloat((baseSpeed * speedMultiplier).toFixed(2)),
     initial_distraction_ratio: parseFloat((0.3 + seed * 0.2).toFixed(2)),
     progression_intensity_multiplier: parseFloat((1.5 + seed * 1.5).toFixed(2)),
     max_bubble_density_cap: Math.floor(20 + difficultyBand * 5),
@@ -173,19 +158,18 @@ function generateClearTheAirParams(today: string, difficultyBand: number): z.inf
   };
 }
 
-function clampBand(band: number): number {
+function clampBand(band) {
   return Math.max(1, Math.min(5, Math.round(band)));
 }
 
 // =========================================================================
 // 4. MAIN ENDPOINT HANDLER
 // =========================================================================
-export default async function handler(req: CustomRequest, res: CustomResponse) {
+export default async function handler(req, res) {
   if (req.method !== "POST" && req.method !== "GET") return res.status(405).json({ error: "Method Not Allowed" });
 
-  const executionTraces: string[] = [];
+  const executionTraces = [];
 
-  // Target current date (e.g., "2026-07-22") or custom query override
   const targetDateStr = (req.query?.date && typeof req.query.date === "string")
     ? req.query.date
     : new Date().toISOString().split("T")[0];
@@ -195,7 +179,7 @@ export default async function handler(req: CustomRequest, res: CustomResponse) {
   const targetDateObj = new Date(targetDateStr + "T00:00:00Z");
   const dayName = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][targetDateObj.getUTCDay()];
 
-  const scheduleMap: Record<string, string[]> = {
+  const scheduleMap = {
     monday: ["EXTRACT_THE_FACTS", "MENTAL_REFLEX"],
     tuesday: ["GUT_CHECK", "STEADY_GAZE"],
     wednesday: ["DARK_DESIGN", "CLEAR_THE_AIR"],
@@ -207,9 +191,6 @@ export default async function handler(req: CustomRequest, res: CustomResponse) {
 
   const activeGameTypes = scheduleMap[dayName] || ["EXTRACT_THE_FACTS", "MENTAL_REFLEX"];
 
-  // -----------------------------------------------------------------------
-  // SELF-HEALING CHECK: VERIFY IF TODAY'S GAMES ALREADY EXIST
-  // -----------------------------------------------------------------------
   try {
     const { data: existingRows } = await supabase
       .from("daily_scenarios")
@@ -230,55 +211,105 @@ export default async function handler(req: CustomRequest, res: CustomResponse) {
 
     executionTraces.push(`[Check]: Missing games detected for ${targetDateStr}: [${missingGames.join(", ")}]. Proceeding with generation...`);
 
-    // -----------------------------------------------------------------------
-    // STEP 1 & 2: TELEMETRY REFINEMENT LOOP
-    // -----------------------------------------------------------------------
-    const targetDifficultyBands: Record<string, number> = { STEADY_GAZE: 3, CLEAR_THE_AIR: 3, EXTRACT_THE_FACTS: 3, GUT_CHECK: 3, DARK_DESIGN: 3, MENTAL_REFLEX: 3 };
+    // STEP 1 & 2: TELEMETRY REFINEMENT LOOP (BI-DIRECTIONAL SWINGS)
+    const targetDifficultyBands = { STEADY_GAZE: 3, CLEAR_THE_AIR: 3, EXTRACT_THE_FACTS: 3, GUT_CHECK: 3, DARK_DESIGN: 3, MENTAL_REFLEX: 3 };
+    
+    const extractFactsCharLimitMap = {};
+    const sensorySpeedMultipliers = { STEADY_GAZE: 1.0, CLEAR_THE_AIR: 1.0 };
+    const gutCheckVarianceMap = {};
 
     const { data: kalariData } = await supabase.from("kalari_games").select("mode, difficulty_band");
     if (kalariData) kalariData.forEach(row => { if (targetDifficultyBands[row.mode.toUpperCase()] && row.difficulty_band) targetDifficultyBands[row.mode.toUpperCase()] = clampBand(row.difficulty_band); });
 
     const { data: userStats } = await supabase.from("user_stats").select("game_type_id, difficulty_band, is_success, score, completion_time");
-    const parsedStats = (userStats || []) as UserStatRecord[];
+    const parsedStats = userStats || [];
 
     for (const gameId of Object.keys(targetDifficultyBands)) {
       const gameEntries = parsedStats.filter(s => s.game_type_id === gameId);
       let currentBand = targetDifficultyBands[gameId];
       if (gameEntries.length > 0 && gameEntries[0].difficulty_band) currentBand = clampBand(gameEntries[0].difficulty_band);
 
+      // Base character limit enforcing the hard 400-character ceiling max
+      let baseCharLimit = Math.min(400, Math.floor(280 * (1 + (currentBand - 3) * 0.1)));
+      let baseVariance = 10.0 + currentBand * 5.0;
+
       if (gameEntries.length >= 5) {
         const winRate = gameEntries.filter(e => e.is_success === true).length / gameEntries.length;
         const abandonRate = gameEntries.filter(e => e.is_success === false).length / gameEntries.length;
-        const scores = gameEntries.map(e => e.score).filter((s): s is number => s !== null);
+        const scores = gameEntries.map(e => e.score).filter((s) => s !== null);
         const isLowScore = (scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 70) < 50;
         let newBand = currentBand;
 
-        if (gameId === "EXTRACT_THE_FACTS" || gameId === "DARK_DESIGN") {
+        // 1. EXTRACT FACTS: Reduce on high abandon, cap rigidly at 400 chars
+        if (gameId === "EXTRACT_THE_FACTS") {
+          if (abandonRate > 0.20) {
+            baseCharLimit = Math.floor(baseCharLimit * 0.90);
+            executionTraces.push(`[Telemetry Adjustment]: Extract Facts Abandon Rate > 20%. Char limit reduced to ${baseCharLimit}`);
+          } else if (winRate > 0.80) {
+            baseCharLimit = Math.min(400, Math.floor(baseCharLimit * 1.10));
+          }
+
           if (abandonRate > 0.20 || winRate < 0.50 || isLowScore) newBand -= 1;
           else if (winRate > 0.80) newBand += 1;
-        } else if (gameId === "STEADY_GAZE" || gameId === "CLEAR_THE_AIR" || gameId === "GUT_CHECK") {
-          if (winRate > 0.85) newBand += 1;
-          else if (winRate < 0.15 || isLowScore) newBand -= 1;
+        } 
+        
+        // 2. SENSORY (GAZE / AIR): Increase on Win > 85%, decrease on Win < 15%
+        else if (gameId === "STEADY_GAZE" || gameId === "CLEAR_THE_AIR") {
+          if (winRate > 0.85) {
+            sensorySpeedMultipliers[gameId] = 1.15;
+            executionTraces.push(`[Telemetry Adjustment]: ${gameId} Win Rate > 85%. Speed multiplier increased to 1.15`);
+            newBand += 1;
+          } else if (winRate < 0.15 || isLowScore) {
+            sensorySpeedMultipliers[gameId] = 0.85;
+            executionTraces.push(`[Telemetry Adjustment]: ${gameId} Win Rate < 15%. Speed multiplier decreased to 0.85`);
+            newBand -= 1;
+          }
+        } 
+
+        // 3. GUT CHECK: Widen variance on high win rate, tighten variance on low win rate
+        else if (gameId === "GUT_CHECK") {
+          if (winRate > 0.85) {
+            baseVariance += 10.0;
+            executionTraces.push(`[Telemetry Adjustment]: Gut Check Win Rate > 85%. Anchor variance widened to ${baseVariance}%`);
+            newBand += 1;
+          } else if (winRate < 0.15 || isLowScore) {
+            baseVariance = Math.max(5.0, baseVariance - 5.0);
+            executionTraces.push(`[Telemetry Adjustment]: Gut Check Win Rate < 15%. Anchor variance narrowed to ${baseVariance}%`);
+            newBand -= 1;
+          }
+        } 
+        
+        else if (gameId === "DARK_DESIGN") {
+          if (abandonRate > 0.20 || winRate < 0.50 || isLowScore) newBand -= 1;
+          else if (winRate > 0.80) newBand += 1;
         } else if (gameId === "MENTAL_REFLEX") {
           if (winRate < 0.30 || isLowScore) newBand -= 1;
           else if (winRate > 0.70) newBand += 1;
         }
+
         targetDifficultyBands[gameId] = clampBand(newBand);
-      } else targetDifficultyBands[gameId] = currentBand;
+      } else {
+        targetDifficultyBands[gameId] = currentBand;
+      }
+
+      extractFactsCharLimitMap[gameId] = Math.min(400, baseCharLimit);
+      gutCheckVarianceMap[gameId] = baseVariance;
     }
 
-    // -----------------------------------------------------------------------
-    // STEP 3: CONTENT GENERATION & LOGGING (VERBATIM PROMPTS + UPSERT)
-    // -----------------------------------------------------------------------
+    // STEP 3: CONTENT GENERATION & LOGGING
     for (const gameType of missingGames) {
       const band = targetDifficultyBands[gameType];
-      let finalPayload: any = null;
+      let finalPayload = null;
 
-      if (gameType === "STEADY_GAZE") finalPayload = SteadyGazeSchema.parse(generateSteadyGazeParams(targetDateStr, band));
-      else if (gameType === "CLEAR_THE_AIR") finalPayload = ClearTheAirSchema.parse(generateClearTheAirParams(targetDateStr, band));
+      if (gameType === "STEADY_GAZE") {
+        finalPayload = SteadyGazeSchema.parse(generateSteadyGazeParams(targetDateStr, band, sensorySpeedMultipliers["STEADY_GAZE"]));
+      } 
+      else if (gameType === "CLEAR_THE_AIR") {
+        finalPayload = ClearTheAirSchema.parse(generateClearTheAirParams(targetDateStr, band, sensorySpeedMultipliers["CLEAR_THE_AIR"]));
+      } 
       else if (["EXTRACT_THE_FACTS", "GUT_CHECK", "DARK_DESIGN"].includes(gameType)) {
         let generationPrompt = "";
-        let recentTopics: string[] = [];
+        let recentTopics = [];
         try {
           const { data: history } = await supabase.from("daily_scenarios").select("scenario_data").order("play_date", { ascending: false }).limit(10);
           if (history) recentTopics = history.map(h => h.scenario_data?.topic || h.scenario_data?.industry_theme).filter(Boolean);
@@ -288,7 +319,7 @@ export default async function handler(req: CustomRequest, res: CustomResponse) {
         const targetDifficulty = band;
 
         if (gameType === "GUT_CHECK") {
-          const targetVariance = (10.0 + band * 5.0).toFixed(1);
+          const targetVariance = (gutCheckVarianceMap["GUT_CHECK"] || (10.0 + band * 5.0)).toFixed(1);
 
           generationPrompt = `Return ONLY a raw JSON object for 'Gut Check'.
 Date: ${today}.
@@ -348,7 +379,7 @@ Expected JSON Structure:
 }`;
         } 
         else if (gameType === "EXTRACT_THE_FACTS") {
-          const targetCharLimit = Math.floor(280 * (1 + (band - 3) * 0.1));
+          const targetCharLimit = Math.min(400, extractFactsCharLimitMap["EXTRACT_THE_FACTS"] || Math.floor(280 * (1 + (band - 3) * 0.1)));
 
           generationPrompt = `Return ONLY a raw JSON object for 'Extract the Facts'.
 Date: ${today}.
@@ -470,7 +501,7 @@ Expected JSON Structure:
     }
 
     return res.status(200).json({ status: "Success", processed_date: targetDateStr, traces: executionTraces });
-  } catch (err: any) { 
+  } catch (err) { 
     return res.status(500).json({ error: "Self-Healing Seeding Exception", details: err.message || String(err) }); 
   }
 }
