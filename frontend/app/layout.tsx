@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Kalari : Protest the attention economy",
-  description: "Created by Kush Mazumdar and Urjaswi Chakraborty",
+  description: "Created by Turiya Labs",
 };
 
 const RootLayout = ({
