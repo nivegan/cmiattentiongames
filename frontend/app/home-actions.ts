@@ -17,6 +17,7 @@ import { prisma } from "@/utils/prismaInit";
 import { getCurrentDayRange } from "@/utils/getCurrentDayRange";
 import { getCompletedWeekRange } from "@/utils/weekRange";
 import { getOrGenerateWeeklySummary } from "@/utils/weeklyReviewFallback";
+import { hasActivityBefore } from "@/utils/firstSeen";
 import type { GameMode } from "@/utils/gameMode";
 import type { WeeklyReviewResult } from "@/utils/weeklySummaryTypes";
 
@@ -98,15 +99,35 @@ const fetchPlayedToday = async (deviceId: string): Promise<GameMode[]> => {
 // unless it has already been dismissed. If the Sunday cron hasn't produced the
 // row yet, computes it lazily so the modal is never empty.
 // Fails closed ({ show: false }) so a DB error never blocks the home page.
-// (No deviceId parameter — unlike the other actions here, this feature is
-// signed-in only, so identity comes solely from the Clerk session.)
-const fetchWeeklyReview = async (): Promise<WeeklyReviewResult> => {
+//
+// The review CONTENT is Clerk-only (the row is keyed on the userId UUID), but
+// the brand-new-user gate below reads both identities — hence the deviceId
+// parameter. A user whose very first login or first device play falls inside the
+// week being recapped never existed during it, and would otherwise be greeted on
+// their first session by a "we missed you this week" scolding.
+const fetchWeeklyReview = async (
+  deviceId: string,
+): Promise<WeeklyReviewResult> => {
   try {
     const { userId } = await auth();
     if (!userId) return { show: false }; // guests never see the modal
 
     const dbUuid = safeFormatToUuid(userId);
     const range = getCompletedWeekRange();
+
+    // Same dual-identity list as hasCompletedOnboarding: a guest who onboarded
+    // (or played) on this device before signing in is NOT a new user.
+    const ids = [userId, deviceId]
+      .filter((v): v is string => Boolean(v))
+      .map(safeFormatToUuid);
+
+    // Gate BEFORE getOrGenerateWeeklySummary, not after. Beyond correctness,
+    // this keeps a new user's home load from triggering the lazy batch, which
+    // scans all of user_stats, upserts a row per user, and $disconnect()s the
+    // shared Prisma singleton in its finally (a known, deliberately-kept bug).
+    if (!(await hasActivityBefore(ids, range.windowStart))) {
+      return { show: false };
+    }
 
     // Fetches the row, running the endpoint's batch once if the cron hasn't
     // produced it yet; null = brand-new user with nothing to review.

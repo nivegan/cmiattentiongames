@@ -32,6 +32,7 @@ import { WeeklyReviewModal } from "@/components/WeeklyReviewModal";
 import { PushBellButton } from "@/components/PushBellButton";
 import { InstallAppButton } from "@/components/InstallAppButton";
 import { IosInstallModal } from "@/components/IosInstallModal";
+import { GuestSettingsMenu } from "@/components/GuestSettingsMenu";
 import scheduleData from "@/data/dailySchedule.json";
 
 const schedule = scheduleData.schedule as Record<string, string[]>;
@@ -104,8 +105,10 @@ const HomeGrid = () => {
       .catch(() => {});
 
     // Weekly review popup (US 4.3): the server decides (signed-in? summary
-    // exists? not yet dismissed?) — the client just opens what it's given.
-    fetchWeeklyReview()
+    // exists? not yet dismissed? around before the week being recapped?) — the
+    // client just opens what it's given. deviceId lets the new-user gate see a
+    // guest's pre-sign-in history.
+    fetchWeeklyReview(deviceIdRef.current)
       .then((res) => {
         if (res.show && res.payload) {
           setWeeklyReview(res);
@@ -233,6 +236,13 @@ const HomeGrid = () => {
               </div>
             </Show>
             <Show when="signed-out">
+              {/* Guests can't reach the UserButton menu, so About/Feedback get
+                  their own gear — in the same slot, so the cluster doesn't
+                  reshuffle on sign-in (the LogIn box just disappears). */}
+              <GuestSettingsMenu
+                onAbout={() => setAboutOpen(true)}
+                onFeedback={() => setFeedbackOpen(true)}
+              />
               <SignInButton mode="modal" appearance={clerkAppearance}>
                 <button
                   aria-label="Sign in"

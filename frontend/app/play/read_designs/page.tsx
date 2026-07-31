@@ -13,8 +13,8 @@
 // try each phase was solved on (wrong taps + 1).
 //
 // SCORING:
-//   elapsedSeconds = (PHASE2 correct answer − BEGIN ANALYSIS) / 1000
-//   Score = Max(0, round( 100 * 0.7^(patternWrong + techniqueWrong) − Max(0, elapsedSeconds − 8) * 2 ))
+//   playSeconds = seconds from BEGIN ANALYSIS to the PHASE2 correct answer
+//   Score = Max(0, round( 100 * 0.7^(patternWrong + techniqueWrong) − Max(0, playSeconds − GRACE_SECONDS) * 2 ))
 
 import { useState, useEffect, useRef } from "react";
 import { Loader2 } from "lucide-react";
@@ -31,6 +31,12 @@ import { GameErrorScreen } from "@/components/GameErrorScreen";
 
 // All possible game phases — drives which section of the UI is displayed.
 type AppPhase = "INTRO" | "PHASE1" | "PHASE2" | "RESULTS";
+
+// Seconds of play that cost nothing; every second beyond this drops the score by
+// 2. Clearing both MCQ phases plus the 700 ms PHASE1→PHASE2 transition takes a
+// real player well past a handful of seconds, so this has to be generous enough
+// that a clean run can still reach 100.
+const GRACE_SECONDS = 30;
 
 // The four fixed Phase-1 tiles. Icon + label are constant per quadrant; only the
 // body text varies (from vector_mcq.options). Render order is fixed here and
@@ -123,12 +129,12 @@ const ReadDesignsPage = () => {
   }, [deviceIdRef, router]);
 
   // INTERIM SCORING: exponential decay per wrong tap, minus a time penalty
-  // beyond an 8-second grace window. Bounded to 0 (and naturally to 100).
+  // beyond GRACE_SECONDS. Bounded to 0 (and naturally to 100).
   const finalScore = Math.max(
     0,
     Math.round(
       100 * Math.pow(0.7, patternWrong + techniqueWrong) -
-        Math.max(0, playSeconds - 8) * 2,
+        Math.max(0, playSeconds - GRACE_SECONDS) * 2,
     ),
   );
 

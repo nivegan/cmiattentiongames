@@ -31,6 +31,26 @@ import { renderBoldCopy } from "@/lib/richCopy";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 
+// Back-to-home control for the early-return screens (signed-out, load error).
+// Those are centred full-screen states with no header row of their own, so it is
+// pinned to the corner instead — without it they are dead ends with no way back
+// but the browser's own back button. Styling matches the signed-in header's back
+// arrow below.
+const BackToHomeCorner = () => (
+  <div className="absolute top-6 left-4">
+    <Button
+      asChild
+      variant="ghost"
+      size="icon"
+      className="rounded-xl bg-stone-200/60 hover:bg-stone-200 text-[#232323]"
+    >
+      <Link href="/" aria-label="Back to home">
+        <ArrowLeft className="size-5" />
+      </Link>
+    </Button>
+  </div>
+);
+
 // Maps each game mode to its human-readable pill label. Partial<Record<...>>
 // means a mode without a label falls through to the raw id / "Unknown".
 const GAME_LABELS: Partial<Record<GameMode, string>> = {
@@ -104,7 +124,8 @@ const HistoryPage = () => {
   // is fetched or shown for anonymous visitors.
   if (!isSignedIn) {
     return (
-      <div className="min-h-screen bg-[#FAF6F0] flex items-center justify-center p-6">
+      <div className="relative min-h-screen bg-[#FAF6F0] flex items-center justify-center p-6">
+        <BackToHomeCorner />
         <div className="text-center space-y-6">
           <h1 className="font-serif font-bold text-2xl text-[#232323]">
             Sign in to save history
@@ -122,7 +143,8 @@ const HistoryPage = () => {
   // Inline retry UI if the fetch failed.
   if (loadError) {
     return (
-      <div className="min-h-screen bg-[#FAF6F0] flex items-center justify-center p-6">
+      <div className="relative min-h-screen bg-[#FAF6F0] flex items-center justify-center p-6">
+        <BackToHomeCorner />
         <div className="text-center space-y-4">
           <p className="text-[#8B2626] font-medium">Failed to load history.</p>
           <Button
