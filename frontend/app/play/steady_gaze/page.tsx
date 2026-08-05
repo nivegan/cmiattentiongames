@@ -462,11 +462,14 @@ const SteadyGazePage = () => {
                 </p>
                 <div className="space-y-2 text-[11px]">
                   {[
-                    { label: "DURATION", value: "60 seconds" },
-                    { label: "GOAL", value: "Tap when you see the shimmer" },
+                    { label: "DURATION", value: "60s" },
                     {
-                      label: "FOCUS",
-                      value: "Watch for subtle visual changes",
+                      label: "GOAL",
+                      value: "Tap anywhere when a bubble appears",
+                    },
+                    {
+                      label: "PENALTY",
+                      value: "Missing a bubble or making extra taps",
                     },
                   ].map(({ label, value }) => (
                     <div key={label} className="flex gap-1.5">
