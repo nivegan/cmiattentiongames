@@ -220,9 +220,17 @@ CRITICAL LENGTH CONSTRAINTS:
 2. Every 'the_real_question' MUST be under a strict maximum length of 150 characters.
 
 MANDATORY QUESTION STYLE:
-Every single question segment must consist of two steps:
-1. An 'anchor_statement': Phrased as a clear binary "Yes/No" baseline check containing an everyday numeric benchmark (e.g., "Does a standard marathon cover more than 30 miles?").
-2. A 'the_real_question': A direct numerical question fallback styled to ask the user for the actual count or value if they guess incorrectly or encounter a false anchor (e.g., "What is the official length of a standard marathon in miles?").
+Every question segment pairs an 'anchor_statement' with a 'the_real_question':
+1. An 'anchor_statement': MUST be a strictly binary Yes/No question — a closed interrogative whose ONLY valid answers are "Yes" or "No".
+   STRICT YES/NO RULES (all mandatory):
+   - MUST begin with one of: Is, Are, Was, Were, Does, Do, Did, Has, Have, Can, Could, Will, Would.
+   - MUST end with a question mark.
+   - MUST NOT begin with or contain an interrogative word: how, how many, how much, what, which, when, where, who, why.
+   - MUST NOT offer a choice ("A or B?"), MUST NOT be compound (no "and"/"or" joining two separate questions), MUST NOT be open-ended or ask the user to supply a value.
+   - MUST contain exactly ONE numeric benchmark, expressed as a comparison boundary using "more than", "less than", "at least", "over", "under", or "exactly".
+   - MUST be phrased as a declarative claim in question form, never as a statement with a trailing question mark.
+   VALID: "Does a standard marathon cover more than 30 miles?" / "Was Instagram launched before 2010?"
+   INVALID: "How many miles is a marathon?" (wh-word) / "A marathon is 26.2 miles, correct?" (statement) / "Is a marathon 26.2 or 42 km?" (choice)
 
 Field Mapping Specifications:
 1. 'industry_theme': A friendly, accessible theme title representing the specific general knowledge sector chosen.
